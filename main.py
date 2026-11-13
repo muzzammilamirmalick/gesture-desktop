@@ -1,4 +1,4 @@
-"""Webcam window that shows the detected hand and gesture."""
+"""Webcam window that turns hand gestures into mouse and keyboard actions."""
 
 import time
 
@@ -7,9 +7,11 @@ import mediapipe as mp
 from mediapipe.tasks.python import BaseOptions
 from mediapipe.tasks.python.vision import HandLandmarker, HandLandmarkerOptions, RunningMode
 
+import actions
 import config
 import gestures
 import overlay
+from debounce import GestureStabilizer, TriggerGate
 
 
 def create_landmarker():
@@ -31,16 +33,32 @@ def find_hand(landmarker, frame, timestamp_ms):
     return [(point.x, point.y) for point in result.hand_landmarks[0]]
 
 
+def one_shot_gestures():
+    """Gestures whose action should fire once per reset."""
+    return {
+        gesture
+        for gesture, action in config.GESTURE_ACTIONS.items()
+        if action and action not in actions.CONTINUOUS_ACTIONS
+    }
+
+
 def resize_for_window(frame):
     height, width = frame.shape[:2]
     new_height = int(height * config.WINDOW_WIDTH / width)
     return cv2.resize(frame, (config.WINDOW_WIDTH, new_height))
 
 
-def control_line(control_on):
-    if control_on:
-        return "CONTROL ON", overlay.GREEN
-    return "CONTROL OFF", overlay.RED
+def status_lines(control_on, armed, last_action):
+    if not control_on:
+        return [("CONTROL OFF", overlay.RED)]
+    lines = [("CONTROL ON", overlay.GREEN)]
+    if armed:
+        lines.append(("ready", overlay.GREEN))
+    else:
+        lines.append(("make a fist to arm", overlay.GREY))
+    if last_action:
+        lines.append((f"last: {last_action}", overlay.WHITE))
+    return lines
 
 
 def window_closed():
@@ -54,10 +72,14 @@ def main():
         return
 
     landmarker = create_landmarker()
+    stabilizer = GestureStabilizer(config.STABLE_FRAMES)
+    gate = TriggerGate(one_shot_gestures(), config.RESET_GESTURES)
+
     cv2.namedWindow(config.WINDOW_NAME)
     cv2.setWindowProperty(config.WINDOW_NAME, cv2.WND_PROP_TOPMOST, 1)
     start = time.monotonic()
     control_on = False  # always start safe
+    last_action = None
 
     while True:
         ok, frame = camera.read()
@@ -67,12 +89,17 @@ def main():
 
         timestamp_ms = int((time.monotonic() - start) * 1000)
         landmarks = find_hand(landmarker, frame, timestamp_ms)
-        gesture = gestures.classify(landmarks)
+        gesture = stabilizer.update(gestures.classify(landmarks)) or gestures.NO_HAND
+
+        if control_on and gate.update(gesture):
+            action = config.GESTURE_ACTIONS[gesture]
+            actions.run(action)
+            last_action = action
 
         frame = resize_for_window(frame)
         if landmarks:
             overlay.draw_hand(frame, landmarks)
-        overlay.draw_status(frame, gesture, [control_line(control_on)])
+        overlay.draw_status(frame, gesture, status_lines(control_on, gate.armed, last_action))
         overlay.draw_help(frame, "space: control on/off   q: quit")
         cv2.imshow(config.WINDOW_NAME, frame)
 
@@ -81,6 +108,7 @@ def main():
             break
         if key == ord(" "):
             control_on = not control_on
+            gate.disarm()  # never fire straight away after switching on
 
     camera.release()
     landmarker.close()

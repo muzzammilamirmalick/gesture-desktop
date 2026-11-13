@@ -4,7 +4,7 @@
 # Set a value to None to switch a gesture off.
 GESTURE_ACTIONS = {
     "pinch": "click",
-    "point": "move_cursor",
+    "point": None,
     "swipe_right": None,
     "swipe_left": None,
     "open_palm": None,
