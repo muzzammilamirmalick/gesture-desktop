@@ -43,9 +43,9 @@ def text_width(text, size, thickness=1):
     return cv2.getTextSize(text, FONT, size, thickness)[0][0]
 
 
-def darken(frame, top, bottom):
-    strip = frame[top:bottom]
-    cv2.convertScaleAbs(strip, dst=strip, alpha=0.35)
+def darken(frame, top, bottom, left=0, right=None):
+    area = frame[top:bottom, left:right]
+    cv2.convertScaleAbs(area, dst=area, alpha=0.35)
 
 
 def gesture_color(gesture):
@@ -102,14 +102,14 @@ def help_panel(height, keys):
     for name, action in instructions.gesture_guide():
         cv2.putText(panel, name, (16, y), FONT, 0.5, WHITE, 1, cv2.LINE_AA)
         cv2.putText(panel, action, (ACTION_COLUMN, y), FONT, 0.5, GREY, 1, cv2.LINE_AA)
-        y += 28
+        y += 26
 
     y += 6
     cv2.putText(panel, "Keys", (16, y), FONT, 0.75, WHITE, 2, cv2.LINE_AA)
     y += 28
     for key, meaning in keys:
         cv2.putText(panel, f"{key}: {meaning}", (16, y), FONT, 0.5, GREY, 1, cv2.LINE_AA)
-        y += 24
+        y += 22
     return panel
 
 
@@ -167,3 +167,14 @@ def sign_help_panel(height, keys):
         cv2.putText(panel, text, (16, y), FONT, size, color, thickness, cv2.LINE_AA)
         y += 32 if thickness == 2 else 24
     return panel
+
+
+def draw_eye_status(frame, eye_status, gaze):
+    """Small box under the header with the eye state and the rough gaze."""
+    width = frame.shape[1]
+    left = width - 270
+    top = HEADER_HEIGHT
+    darken(frame, top, top + 58, left, width)
+    color = GREY if eye_status == "no face" else WHITE
+    draw_text(frame, f"Eyes: {eye_status}", (left + 12, top + 22), color, 0.55)
+    draw_text(frame, f"Gaze (experimental): {gaze or '-'}", (left + 12, top + 46), AMBER, 0.5)

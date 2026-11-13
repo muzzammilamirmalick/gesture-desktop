@@ -12,6 +12,7 @@ from mediapipe.tasks.python.vision import HandLandmarker, HandLandmarkerOptions,
 import actions
 import asl_letters
 import config
+import eyes
 from camera import Camera
 from fps import FpsCounter
 import gestures
@@ -28,6 +29,7 @@ FIRED_SHOW_SECONDS = 1.5
 KEYS = [
     ("space", "control on or off"),
     ("s", "sign language mode"),
+    ("e", "eye tracking on or off"),
     ("h", "show or hide this help"),
     ("q", "quit"),
 ]
@@ -37,6 +39,7 @@ SIGN_KEYS = [
     ("space", "add a space"),
     ("backspace", "delete a letter"),
     ("c", "clear the word"),
+    ("e", "eye tracking on or off"),
     ("h", "show or hide this help"),
     ("q", "quit"),
 ]
@@ -151,6 +154,11 @@ class App:
         self.fired_at = 0.0
         self.panels = {}
         self.fps = FpsCounter()
+        self.eyes_on = False  # the face model adds load, so it starts off
+        self.blinks = eyes.BlinkDetector()
+        self.gaze = GestureStabilizer(config.GAZE_STABLE_FRAMES)
+        self.eye_status = "no face"
+        self.gaze_label = None
 
     def update(self, landmarks):
         """Process one frame. Returns the gesture name to show."""
@@ -172,8 +180,39 @@ class App:
             self.message = "failsafe hit, control turned off"
             return
         if fired:
-            self.fired = instructions.action_words(fired)
-            self.fired_at = time.monotonic()
+            self.show_fired(instructions.action_words(fired))
+
+    def update_eyes(self, scores):
+        """Process one frame of face scores, or None when no face is found."""
+        if scores is None:
+            self.blinks.reset()
+            self.eye_status = "no face"
+            self.gaze_label = None
+            return
+        event = self.blinks.update(eyes.eyes_closed_score(scores), time.monotonic())
+        self.eye_status = "closed" if self.blinks.eyes_closed() else "open"
+        self.gaze_label = self.gaze.update(eyes.gaze_direction(scores))
+        if event == eyes.DOUBLE_BLINK:
+            self.on_double_blink()
+
+    def on_double_blink(self):
+        action = config.EYE_ACTIONS.get(eyes.DOUBLE_BLINK)
+        if not action:
+            return
+        if not self.control_on:
+            self.show_fired("double blink seen, control is off")
+            return
+        try:
+            actions.run(action)
+        except pyautogui.FailSafeException:
+            self.control_on = False
+            self.message = "failsafe hit, control turned off"
+            return
+        self.show_fired(f"{instructions.action_words(action)} (double blink)")
+
+    def show_fired(self, text):
+        self.fired = text
+        self.fired_at = time.monotonic()
 
     def recent_action(self):
         if time.monotonic() - self.fired_at < FIRED_SHOW_SECONDS:
@@ -189,7 +228,7 @@ class App:
         if self.sign_mode:
             lines.append(("s: leave   space: space   backspace: delete   c: clear", overlay.GREY))
         else:
-            lines.append(("h: help   space: control   s: sign mode   q: quit", overlay.GREY))
+            lines.append(("h: help   space: control   s: sign mode   e: eyes   q: quit", overlay.GREY))
         return lines
 
     def draw(self, frame, landmarks, gesture):
@@ -203,6 +242,8 @@ class App:
             overlay.draw_word(frame, self.speller.word)
         else:
             overlay.draw_header(frame, gesture, self.control_on, self.recent_action(), fps)
+        if self.eyes_on:
+            overlay.draw_eye_status(frame, self.eye_status, self.gaze_label)
         overlay.draw_footer(frame, self.footer_lines())
         if self.show_help:
             frame = overlay.attach_panel(frame, self.help_panel(frame.shape[0]))
@@ -223,6 +264,8 @@ class App:
             self.toggle_help()
         elif key == ord("s"):
             self.toggle_sign_mode()
+        elif key == ord("e"):
+            self.toggle_eyes()
         elif self.sign_mode:
             self.handle_sign_key(key)
         elif key == ord(" "):
@@ -241,6 +284,12 @@ class App:
         if not self.show_help:
             HELP_SEEN_FILE.touch()
 
+    def toggle_eyes(self):
+        self.eyes_on = not self.eyes_on
+        self.blinks.reset()
+        self.eye_status = "no face"
+        self.gaze_label = None
+
     def toggle_sign_mode(self):
         self.sign_mode = not self.sign_mode
         # Hand control is always off while signing, so letters never click anything.
@@ -257,6 +306,14 @@ class App:
         self.controller.gate.disarm()  # never fire straight away after switching on
         actions.stop_cursor()
         self.message = ""
+
+
+def open_face_tracker(app):
+    if not Path(config.FACE_MODEL_PATH).exists():
+        app.eyes_on = False
+        app.message = "face model missing, see README"
+        return None
+    return eyes.FaceTracker(config.FACE_MODEL_PATH)
 
 
 def main():
@@ -278,6 +335,7 @@ def main():
     camera.start()
     start = time.monotonic()
     frame_number = 0
+    face = None  # loaded the first time eye tracking is turned on
 
     while True:
         # Waits for the next new frame, so the same frame is never processed twice.
@@ -285,11 +343,18 @@ def main():
         if frame is None:
             print("The webcam stopped sending frames.")
             break
+        camera_frame = frame
         frame = cv2.flip(frame, 1)  # mirror view so moving right looks like right
 
         timestamp_ms = int((time.monotonic() - start) * 1000)
         landmarks = find_hand(landmarker, frame, timestamp_ms)
         gesture = app.update(landmarks)
+
+        if app.eyes_on:
+            face = face or open_face_tracker(app)
+            if face:
+                # The face model gets the unmirrored frame so "left" means your left.
+                app.update_eyes(face.scores(camera_frame, timestamp_ms))
         cv2.imshow(config.WINDOW_NAME, app.draw(frame, landmarks, gesture))
 
         key = cv2.waitKey(1) & 0xFF
@@ -299,6 +364,8 @@ def main():
 
     camera.release()
     landmarker.close()
+    if face:
+        face.close()
     cv2.destroyAllWindows()
 
 

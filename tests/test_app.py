@@ -74,3 +74,59 @@ def test_help_key_toggles_panel(tmp_path, monkeypatch):
     app.handle_key(ord("h"))
     assert app.show_help is False
     assert (tmp_path / ".help_seen").exists()
+
+
+def eye_scores(closed):
+    names = [
+        "eyeLookOutLeft", "eyeLookInLeft", "eyeLookUpLeft",
+        "eyeLookOutRight", "eyeLookInRight", "eyeLookUpRight",
+    ]
+    scores = dict.fromkeys(names, 0.05)
+    scores["eyeBlinkLeft"] = scores["eyeBlinkRight"] = 0.9 if closed else 0.05
+    return scores
+
+
+def double_blink(app, monkeypatch):
+    clock = {"now": 0.0}
+    monkeypatch.setattr(main.time, "monotonic", lambda: clock["now"])
+    for closed, frames in [(False, 5), (True, 4), (False, 6), (True, 4), (False, 5)]:
+        for _ in range(frames):
+            app.update_eyes(eye_scores(closed))
+            clock["now"] += 1 / 30
+
+
+def test_eyes_start_off():
+    assert make_app().eyes_on is False
+
+
+def test_e_toggles_eyes():
+    app = make_app()
+    app.handle_key(ord("e"))
+    assert app.eyes_on is True
+
+
+def test_double_blink_plays_or_pauses_when_control_is_on(monkeypatch):
+    sent = []
+    monkeypatch.setattr(main.actions, "run", sent.append)
+    app = make_app()
+    app.control_on = True
+    double_blink(app, monkeypatch)
+    assert sent == ["play_pause"]
+
+
+def test_double_blink_does_nothing_when_control_is_off(monkeypatch):
+    sent = []
+    monkeypatch.setattr(main.actions, "run", sent.append)
+    app = make_app()
+    double_blink(app, monkeypatch)
+    assert sent == []
+    assert "control is off" in app.fired
+
+
+def test_missing_face_model_turns_eyes_off(monkeypatch):
+    monkeypatch.setattr(main.config, "FACE_MODEL_PATH", "models/not_here.task")
+    app = make_app()
+    app.eyes_on = True
+    assert main.open_face_tracker(app) is None
+    assert app.eyes_on is False
+    assert "face model" in app.message

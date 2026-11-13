@@ -15,6 +15,7 @@ GESTURE_NAMES = {
     "thumbs_down": "Thumbs down",
     "unknown": "Unknown",
     "no_hand": "No hand",
+    "double_blink": "Blink twice",
 }
 
 ACTION_WORDS = {
@@ -51,4 +52,7 @@ def gesture_guide():
         action = config.GESTURE_ACTIONS.get(gesture)
         if action:
             guide.append((gesture_name(gesture), action_words(action)))
+    blink_action = config.EYE_ACTIONS.get("double_blink")
+    if blink_action:
+        guide.append((gesture_name("double_blink"), f"{action_words(blink_action)} (e)"))
     return guide
