@@ -50,8 +50,10 @@ REARM_GESTURES = {"pinch": {"point"}}
 # How long a pinch must be held to count as pinch and hold.
 PINCH_HOLD_SECONDS = 1.0
 
-# Webcam
+# Webcam. 640x480 is plenty for hand tracking and keeps everything fast.
 CAMERA_INDEX = 0
+CAMERA_WIDTH = 640
+CAMERA_HEIGHT = 480
 WINDOW_NAME = "Gesture Control"
 WINDOW_WIDTH = 640
 MODEL_PATH = "models/hand_landmarker.task"

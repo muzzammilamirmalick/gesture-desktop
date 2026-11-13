@@ -11,6 +11,8 @@ from mediapipe.tasks.python.vision import HandLandmarker, HandLandmarkerOptions,
 
 import actions
 import config
+from camera import Camera
+from fps import FpsCounter
 import gestures
 import instructions
 import overlay
@@ -58,6 +60,8 @@ def one_shot_gestures():
 
 def resize_for_window(frame):
     height, width = frame.shape[:2]
+    if width == config.WINDOW_WIDTH:
+        return frame
     new_height = int(height * config.WINDOW_WIDTH / width)
     return cv2.resize(frame, (config.WINDOW_WIDTH, new_height))
 
@@ -129,6 +133,7 @@ class App:
         self.fired = None
         self.fired_at = 0.0
         self.panel = None
+        self.fps = FpsCounter()
 
     def update(self, landmarks):
         raw, stable, event = self.controller.read_gesture(landmarks)
@@ -162,7 +167,8 @@ class App:
         frame = resize_for_window(frame)
         if landmarks:
             overlay.draw_hand(frame, landmarks)
-        overlay.draw_header(frame, gesture, self.control_on, self.recent_action())
+        fps = self.fps.tick(time.monotonic())
+        overlay.draw_header(frame, gesture, self.control_on, self.recent_action(), fps)
         overlay.draw_footer(frame, self.footer_lines())
         if self.show_help:
             frame = overlay.attach_panel(frame, self.help_panel(frame.shape[0]))
@@ -196,8 +202,8 @@ class App:
 
 
 def main():
-    camera = cv2.VideoCapture(config.CAMERA_INDEX)
-    if not camera.isOpened():
+    camera = Camera(config.CAMERA_INDEX, config.CAMERA_WIDTH, config.CAMERA_HEIGHT)
+    if not camera.is_open():
         print("Could not open the webcam. Check CAMERA_INDEX in config.py.")
         print(permissions.camera_help())
         return
@@ -211,11 +217,15 @@ def main():
 
     cv2.namedWindow(config.WINDOW_NAME)
     cv2.setWindowProperty(config.WINDOW_NAME, cv2.WND_PROP_TOPMOST, 1)
+    camera.start()
     start = time.monotonic()
+    frame_number = 0
 
     while True:
-        ok, frame = camera.read()
-        if not ok:
+        # Waits for the next new frame, so the same frame is never processed twice.
+        frame_number, frame = camera.read(frame_number)
+        if frame is None:
+            print("The webcam stopped sending frames.")
             break
         frame = cv2.flip(frame, 1)  # mirror view so moving right looks like right
 

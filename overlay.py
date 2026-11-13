@@ -43,7 +43,8 @@ def text_width(text, size, thickness=1):
 
 
 def darken(frame, top, bottom):
-    frame[top:bottom] = (frame[top:bottom] * 0.35).astype(np.uint8)
+    strip = frame[top:bottom]
+    cv2.convertScaleAbs(strip, dst=strip, alpha=0.35)
 
 
 def gesture_color(gesture):
@@ -54,8 +55,16 @@ def gesture_color(gesture):
     return WHITE
 
 
-def draw_header(frame, gesture, control_on, fired):
-    """Big gesture name, CONTROL ON/OFF and the action that just fired."""
+def fps_color(fps):
+    if fps >= 24:
+        return GREEN
+    if fps >= 15:
+        return AMBER
+    return RED
+
+
+def draw_header(frame, gesture, control_on, fired, fps):
+    """Big gesture name, CONTROL ON/OFF, frames per second and the action that just fired."""
     width = frame.shape[1]
     darken(frame, 0, HEADER_HEIGHT)
 
@@ -64,6 +73,10 @@ def draw_header(frame, gesture, control_on, fired):
     state, color = ("CONTROL ON", GREEN) if control_on else ("CONTROL OFF", RED)
     state_x = width - text_width(state, 0.7, 2) - 14
     draw_text(frame, state, (state_x, 36), color, 0.7, 2)
+
+    fps_text = f"{fps:.0f} fps"
+    fps_x = width - text_width(fps_text, 0.55) - 14
+    draw_text(frame, fps_text, (fps_x, 70), fps_color(fps), 0.55)
 
     if fired:
         draw_text(frame, f"Action: {fired}", (14, 72), GREEN, 0.65, 2)
