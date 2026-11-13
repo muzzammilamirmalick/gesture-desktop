@@ -37,6 +37,12 @@ def resize_for_window(frame):
     return cv2.resize(frame, (config.WINDOW_WIDTH, new_height))
 
 
+def control_line(control_on):
+    if control_on:
+        return "CONTROL ON", overlay.GREEN
+    return "CONTROL OFF", overlay.RED
+
+
 def window_closed():
     return cv2.getWindowProperty(config.WINDOW_NAME, cv2.WND_PROP_VISIBLE) < 1
 
@@ -51,6 +57,7 @@ def main():
     cv2.namedWindow(config.WINDOW_NAME)
     cv2.setWindowProperty(config.WINDOW_NAME, cv2.WND_PROP_TOPMOST, 1)
     start = time.monotonic()
+    control_on = False  # always start safe
 
     while True:
         ok, frame = camera.read()
@@ -65,13 +72,15 @@ def main():
         frame = resize_for_window(frame)
         if landmarks:
             overlay.draw_hand(frame, landmarks)
-        overlay.draw_status(frame, gesture)
-        overlay.draw_help(frame, "q: quit")
+        overlay.draw_status(frame, gesture, [control_line(control_on)])
+        overlay.draw_help(frame, "space: control on/off   q: quit")
         cv2.imshow(config.WINDOW_NAME, frame)
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord("q") or window_closed():
             break
+        if key == ord(" "):
+            control_on = not control_on
 
     camera.release()
     landmarker.close()
