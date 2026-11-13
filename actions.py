@@ -1,18 +1,20 @@
 """Real mouse and keyboard actions sent to the operating system."""
 
+import math
+import time
+
 import pyautogui
 
 import config
 import gestures
 import mac_keys
 import shortcuts
-from cursor import Smoother, map_to_screen
+from cursor import CursorPredictor, map_to_screen
 
 pyautogui.FAILSAFE = True  # push the mouse into a screen corner to stop everything
 pyautogui.PAUSE = 0
 
 OS_NAME = shortcuts.detect_os()
-cursor_smoother = Smoother(config.CURSOR_SMOOTHING, config.CURSOR_FAST_PIXELS)
 
 
 def click():
@@ -38,16 +40,55 @@ def cursor_point(landmarks):
     return landmarks[gestures.INDEX_MCP]
 
 
+class Cursor:
+    """Each detection sets where the cursor should go. The main loop then moves
+    it on every pass, using the predicted position, so it glides smoothly even
+    when detection runs slower than the screen."""
+
+    def __init__(self):
+        self.predictor = CursorPredictor(config.CURSOR_ALPHA, config.CURSOR_BETA, config.CURSOR_MAX_AHEAD)
+        self.active = False
+        self.last_moved = None
+        self.screen = None
+
+    def aim(self, landmarks, now):
+        if self.screen is None:
+            self.screen = pyautogui.size()  # slow on some systems, so ask once
+        width, height = self.screen
+        target = map_to_screen(cursor_point(landmarks), width, height, config.CURSOR_MARGIN)
+        self.predictor.observe(target, now)
+        self.active = True
+
+    def follow(self, now):
+        if not self.active:
+            return
+        x, y = self.predictor.predict(now)
+        # Skip tiny moves, they are just noise and cost a system call each.
+        if self.last_moved and math.dist(self.last_moved, (x, y)) < 1:
+            return
+        pyautogui.moveTo(round(x), round(y))
+        self.last_moved = (x, y)
+
+    def stop(self):
+        # Forget the old position so the cursor does not jump when pointing again.
+        self.active = False
+        self.predictor.reset()
+        self.last_moved = None
+
+
+cursor = Cursor()
+
+
 def move_cursor(landmarks):
-    width, height = pyautogui.size()
-    target = map_to_screen(cursor_point(landmarks), width, height, config.CURSOR_MARGIN)
-    x, y = cursor_smoother.update(target)
-    pyautogui.moveTo(x, y)
+    cursor.aim(landmarks, time.monotonic())
+
+
+def follow_cursor(now):
+    cursor.follow(now)
 
 
 def stop_cursor():
-    # Forget the old position so the cursor does not jump when pointing again.
-    cursor_smoother.reset()
+    cursor.stop()
 
 
 # Fire once per gesture, then wait for the reset pose.

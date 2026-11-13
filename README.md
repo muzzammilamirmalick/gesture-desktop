@@ -95,16 +95,29 @@ The face model needs its own model file (see Running it).
 
 ## Performance
 
-- The camera is asked for 640x480, which is plenty for hand tracking. Some cameras, like the Mac's, would otherwise send full HD frames.
-- The camera is read on its own thread (`camera.py`), and the app always takes the newest frame. Without this, OpenCV can hand back frames that have been queuing up, which feels like lag between your hand and the cursor.
-- The same frame is never processed twice, and the help panel is drawn once and reused.
-- Measured on my Windows laptop without a camera attached, one frame (detection plus drawing) takes about 14 ms with eye tracking off. With eye tracking on and no face in view, it is about 16 ms. A real face adds a few ms more. All of these stay under the 33 ms a 30 fps webcam allows, so the camera sets the frame rate.
-- The cursor smoothing calms small shakes but eases off on big moves (`CURSOR_SMOOTHING` and `CURSOR_FAST_PIXELS`), so it does not lag behind fast movements.
+The main loop never waits for the models.
+
+- **Detection runs in the background.** MediaPipe runs in LIVE_STREAM mode (`tracking.py`). The loop hands over the newest frame and carries on straight away, and picks up the newest result whenever one is ready. If the model is still busy, frames are simply not sent, so nothing queues up.
+- **The cursor is predicted between detections.** Each detection updates a position and a speed (`CursorPredictor` in `cursor.py`). The loop moves the cursor on every pass using where the hand should be by now, so it glides even when detection runs slower than the camera. `CURSOR_ALPHA`, `CURSOR_BETA` and `CURSOR_MAX_AHEAD` in `config.py` tune it.
+- **GPU if there is one.** With `USE_GPU = True` the app tries the GPU first and falls back to the CPU. The window shows which one is in use. The pip build of MediaPipe for Windows has no GPU support, so it uses the CPU there.
+- **Small input for the model.** The camera runs at 640x480 and the models get a 320 pixel wide copy (`DETECTION_WIDTH`). The window still shows the full frame.
+- **Light drawing.** The hand is shown as a dot on each fingertip and a ring where the cursor follows, not a full skeleton.
+- **The camera is read on its own thread** (`camera.py`), so the loop always has the newest frame.
+
+The top right of the window shows the video frame rate and, under it, the detection rate and whether it runs on the CPU or GPU.
+
+Measured on my Windows laptop with a fake 30 fps camera:
+
+| | Video shown | Cursor updates | Longest pause |
+| --- | --- | --- | --- |
+| New loop, real hand model | 30 fps | about 640 a second | 3 ms (after startup) |
+| New loop, slow machine (60 ms per detection) | 30 fps | about 640 a second | 4 ms |
+| Old loop, slow machine (60 ms per detection) | 17 fps | 17 a second | 61 ms |
 
 ## How it works
 
 1. A background thread grabs frames from the webcam. The main loop takes the newest one and mirrors it so the window behaves like a mirror.
-2. MediaPipe finds the hand and returns 21 landmarks (wrist, knuckles, joints and fingertips).
+2. MediaPipe finds the hand in the background and returns 21 landmarks (wrist, knuckles, joints and fingertips). The gesture logic below runs once per new detection, and the cursor moves on every pass of the loop.
 3. `gestures.py` turns those landmarks into a gesture name with simple rules:
    - A finger is **up** when its tip is farther from the wrist than its middle joint. Using distances instead of y values means it still works with a tilted hand.
    - The thumb is **out** when its tip is far from the index knuckle. Whether it points **up** or **down** depends on the thumb tip's position relative to its base.
@@ -123,9 +136,10 @@ The label at the top shows what the camera sees on each frame. Actions use the s
 ```
 main.py          main loop, window, keys and app state
 camera.py        reads the webcam on its own thread
+tracking.py      runs the hand and face models in the background
 gestures.py      gesture rules, swipe and pinch tracking
 debounce.py      stabilizer and fire-once gate
-cursor.py        hand to screen mapping and smoothing
+cursor.py        hand to screen mapping and cursor prediction
 actions.py       mouse and keyboard actions
 shortcuts.py     detects the OS and picks its shortcuts
 mac_keys.py      media keys on Mac

@@ -58,6 +58,7 @@ class Session:
         for _ in range(round(seconds / FRAME_SECONDS)):
             raw, stable, event = self.controller.read_gesture(hand)
             self.controller.act(raw, stable, event, hand)
+            actions.follow_cursor(self.now)  # the main loop does this every pass
             self.now += FRAME_SECONDS
 
 

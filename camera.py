@@ -38,15 +38,18 @@ class Camera:
                     self.frame_number += 1
                 self.new_frame.notify_all()
 
-    def read(self, last_number, timeout=1.0):
-        """Wait for a frame newer than last_number. Returns (number, frame)."""
+    def latest(self):
+        """Return (frame number, newest frame) straight away, without waiting.
+
+        The number goes up with every new frame, so the caller can tell when
+        there is something new to show.
+        """
         with self.new_frame:
-            self.new_frame.wait_for(
-                lambda: self.frame_number > last_number or not self.running, timeout
-            )
-            if self.frame_number <= last_number:
-                return last_number, None
             return self.frame_number, self.frame
+
+    def stopped(self):
+        """True once the camera has stopped sending frames."""
+        return not self.running
 
     def release(self):
         self.running = False

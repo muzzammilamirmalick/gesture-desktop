@@ -4,10 +4,7 @@ import time
 from pathlib import Path
 
 import cv2
-import mediapipe as mp
 import pyautogui
-from mediapipe.tasks.python import BaseOptions
-from mediapipe.tasks.python.vision import HandLandmarker, HandLandmarkerOptions, RunningMode
 
 import actions
 import asl_letters
@@ -21,6 +18,7 @@ import overlay
 import permissions
 from debounce import GestureStabilizer, TriggerGate
 from speller import Speller
+from tracking import FaceTracker, HandTracker
 
 # Created the first time you hide the help panel, so it only opens by itself once.
 HELP_SEEN_FILE = Path(__file__).parent / ".help_seen"
@@ -45,25 +43,6 @@ SIGN_KEYS = [
 ]
 
 BACKSPACE_KEYS = {8, 127}  # Windows sends 8, Mac sends 127
-
-
-def create_landmarker():
-    options = HandLandmarkerOptions(
-        base_options=BaseOptions(model_asset_path=config.MODEL_PATH),
-        running_mode=RunningMode.VIDEO,
-        num_hands=1,
-    )
-    return HandLandmarker.create_from_options(options)
-
-
-def find_hand(landmarker, frame, timestamp_ms):
-    """Return the first hand's landmarks as (x, y) pairs, or None."""
-    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-    result = landmarker.detect_for_video(image, timestamp_ms)
-    if not result.hand_landmarks:
-        return None
-    return [(point.x, point.y) for point in result.hand_landmarks[0]]
 
 
 def one_shot_gestures():
@@ -159,18 +138,33 @@ class App:
         self.gaze = GestureStabilizer(config.GAZE_STABLE_FRAMES)
         self.eye_status = "no face"
         self.gaze_label = None
+        self.landmarks = None
+        self.gesture = gestures.NO_HAND
 
     def update(self, landmarks):
-        """Process one frame. Returns the gesture name to show."""
+        """Process one new hand detection. Returns the gesture name to show."""
+        self.landmarks = landmarks
         if self.sign_mode:
             self.letter = asl_letters.classify_letter(landmarks)
             self.speller.update(self.letter, landmarks is not None, time.monotonic())
-            return gestures.classify(landmarks)
+            self.gesture = gestures.classify(landmarks)
+            return self.gesture
 
         raw, stable, event = self.controller.read_gesture(landmarks)
         if self.control_on:
             self.run_actions(raw, stable, event, landmarks)
+        self.gesture = raw
         return raw
+
+    def tick(self, now):
+        """Runs on every pass of the main loop, between detections too."""
+        if not self.control_on or self.sign_mode:
+            return
+        try:
+            actions.follow_cursor(now)
+        except pyautogui.FailSafeException:
+            self.control_on = False
+            self.message = "failsafe hit, control turned off"
 
     def run_actions(self, raw, stable, event, landmarks):
         try:
@@ -231,17 +225,19 @@ class App:
             lines.append(("h: help   space: control   s: sign mode   e: eyes   q: quit", overlay.GREY))
         return lines
 
-    def draw(self, frame, landmarks, gesture):
+    def draw(self, frame, detection=""):
+        """Draw the window. `detection` is a short line like "detect 30 fps, CPU"."""
         frame = resize_for_window(frame)
+        landmarks = self.landmarks
         if landmarks:
-            overlay.draw_hand(frame, landmarks)
+            overlay.draw_hand(frame, landmarks, actions.cursor_point(landmarks))
         fps = self.fps.tick(time.monotonic())
         if self.sign_mode:
             progress = self.speller.progress(time.monotonic())
-            overlay.draw_sign_header(frame, self.letter, landmarks is not None, progress, fps)
+            overlay.draw_sign_header(frame, self.letter, landmarks is not None, progress, fps, detection)
             overlay.draw_word(frame, self.speller.word)
         else:
-            overlay.draw_header(frame, gesture, self.control_on, self.recent_action(), fps)
+            overlay.draw_header(frame, self.gesture, self.control_on, self.recent_action(), fps, detection)
         if self.eyes_on:
             overlay.draw_eye_status(frame, self.eye_status, self.gaze_label)
         overlay.draw_footer(frame, self.footer_lines())
@@ -313,7 +309,63 @@ def open_face_tracker(app):
         app.eyes_on = False
         app.message = "face model missing, see README"
         return None
-    return eyes.FaceTracker(config.FACE_MODEL_PATH)
+    return FaceTracker(config.FACE_MODEL_PATH, config.DETECTION_WIDTH, config.USE_GPU)
+
+
+def detection_line(hands):
+    return f"detect {hands.detect_fps:.0f} fps, {hands.delegate_name}"
+
+
+def run(camera, hands, app):
+    """The main loop. It never waits for the models, so video and cursor stay smooth."""
+    face = None  # loaded the first time eye tracking is turned on
+    shown_frame = 0
+    seen_hand = 0
+    seen_face = 0
+
+    while True:
+        now = time.monotonic()
+        frame_number, camera_frame = camera.latest()
+        if camera.stopped():
+            print("The webcam stopped sending frames.")
+            break
+
+        new_frame = frame_number != shown_frame
+        if new_frame:
+            shown_frame = frame_number
+            frame = cv2.flip(camera_frame, 1)  # mirror view so moving right looks like right
+            hands.submit(frame, now)
+            if app.eyes_on:
+                face = face or open_face_tracker(app)
+                if face:
+                    # The face model gets the unmirrored frame so "left" means your left.
+                    face.submit(camera_frame, now)
+
+        # Gesture logic runs once per new detection, not once per loop.
+        result_number, landmarks = hands.latest()
+        if result_number != seen_hand:
+            seen_hand = result_number
+            app.update(landmarks)
+
+        if face and app.eyes_on:
+            result_number, scores = face.latest()
+            if result_number != seen_face:
+                seen_face = result_number
+                app.update_eyes(scores)
+
+        # The cursor moves on every pass, using the predicted position.
+        app.tick(now)
+
+        if new_frame:
+            cv2.imshow(config.WINDOW_NAME, app.draw(frame, detection_line(hands)))
+
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord("q") or window_closed():
+            break
+        app.handle_key(key)
+
+    if face:
+        face.close()
 
 
 def main():
@@ -327,46 +379,19 @@ def main():
     if not can_control:
         print(permissions.MAC_PERMISSION_HELP)
 
-    landmarker = create_landmarker()
+    hands = HandTracker(config.MODEL_PATH, config.DETECTION_WIDTH, config.USE_GPU)
+    print(f"Hand detection is running on the {hands.delegate_name}.")
     app = App(can_control)
 
     cv2.namedWindow(config.WINDOW_NAME)
     cv2.setWindowProperty(config.WINDOW_NAME, cv2.WND_PROP_TOPMOST, 1)
     camera.start()
-    start = time.monotonic()
-    frame_number = 0
-    face = None  # loaded the first time eye tracking is turned on
-
-    while True:
-        # Waits for the next new frame, so the same frame is never processed twice.
-        frame_number, frame = camera.read(frame_number)
-        if frame is None:
-            print("The webcam stopped sending frames.")
-            break
-        camera_frame = frame
-        frame = cv2.flip(frame, 1)  # mirror view so moving right looks like right
-
-        timestamp_ms = int((time.monotonic() - start) * 1000)
-        landmarks = find_hand(landmarker, frame, timestamp_ms)
-        gesture = app.update(landmarks)
-
-        if app.eyes_on:
-            face = face or open_face_tracker(app)
-            if face:
-                # The face model gets the unmirrored frame so "left" means your left.
-                app.update_eyes(face.scores(camera_frame, timestamp_ms))
-        cv2.imshow(config.WINDOW_NAME, app.draw(frame, landmarks, gesture))
-
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord("q") or window_closed():
-            break
-        app.handle_key(key)
-
-    camera.release()
-    landmarker.close()
-    if face:
-        face.close()
-    cv2.destroyAllWindows()
+    try:
+        run(camera, hands, app)
+    finally:
+        camera.release()
+        hands.close()
+        cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":

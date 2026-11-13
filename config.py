@@ -54,6 +54,10 @@ PINCH_HOLD_SECONDS = 1.0
 CAMERA_INDEX = 0
 CAMERA_WIDTH = 640
 CAMERA_HEIGHT = 480
+# The models get a smaller copy of each frame. The window still shows full size.
+DETECTION_WIDTH = 320
+# Try the GPU for detection. Falls back to the CPU if this build has no GPU support.
+USE_GPU = True
 WINDOW_NAME = "Gesture Control"
 WINDOW_WIDTH = 640
 MODEL_PATH = "models/hand_landmarker.task"
@@ -72,10 +76,12 @@ STABLE_FRAMES = 4
 
 # Cursor: ignore this much of each frame edge so you can reach screen corners.
 CURSOR_MARGIN = 0.2
-# Smoothing for small moves (0 = frozen, 1 = none). Big moves get less smoothing
-# so the cursor keeps up: a jump of CURSOR_FAST_PIXELS in one frame is not smoothed.
-CURSOR_SMOOTHING = 0.25
-CURSOR_FAST_PIXELS = 120
+# Cursor smoothing and prediction. ALPHA is how far each detection pulls the
+# cursor (lower is smoother, higher is snappier). BETA is how quickly it picks
+# up speed. Between detections the cursor keeps moving for up to MAX_AHEAD seconds.
+CURSOR_ALPHA = 0.6
+CURSOR_BETA = 0.2
+CURSOR_MAX_AHEAD = 0.08
 # The cursor follows the index knuckle, which stays still while you pinch.
 # Set to True to follow the fingertip instead.
 CURSOR_FOLLOWS_TIP = False

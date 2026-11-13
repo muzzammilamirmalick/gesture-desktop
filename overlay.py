@@ -2,7 +2,6 @@
 
 import cv2
 import numpy as np
-from mediapipe.tasks.python.vision import HandLandmarksConnections
 
 import asl_letters
 import gestures
@@ -19,20 +18,19 @@ FONT = cv2.FONT_HERSHEY_SIMPLEX
 HEADER_HEIGHT = 84
 PANEL_WIDTH = 340
 ACTION_COLUMN = 180
-CONNECTIONS = [(c.start, c.end) for c in HandLandmarksConnections.HAND_CONNECTIONS]
+FINGERTIPS = [4, 8, 12, 16, 20]
 
 
-def to_pixels(landmarks, frame):
+def to_pixel(point, frame):
     height, width = frame.shape[:2]
-    return [(int(x * width), int(y * height)) for x, y in landmarks]
+    return int(point[0] * width), int(point[1] * height)
 
 
-def draw_hand(frame, landmarks):
-    points = to_pixels(landmarks, frame)
-    for start, end in CONNECTIONS:
-        cv2.line(frame, points[start], points[end], WHITE, 2)
-    for point in points:
-        cv2.circle(frame, point, 4, GREEN, -1)
+def draw_hand(frame, landmarks, cursor_point):
+    """A light marker: a dot on each fingertip and a ring where the cursor follows."""
+    for tip in FINGERTIPS:
+        cv2.circle(frame, to_pixel(landmarks[tip], frame), 4, WHITE, -1, cv2.LINE_AA)
+    cv2.circle(frame, to_pixel(cursor_point, frame), 10, GREEN, 2, cv2.LINE_AA)
 
 
 def draw_text(frame, text, position, color=WHITE, size=0.6, thickness=1):
@@ -64,7 +62,16 @@ def fps_color(fps):
     return RED
 
 
-def draw_header(frame, gesture, control_on, fired, fps):
+def draw_speed(frame, fps, detection):
+    """Frames per second and the detection rate, top right under the state."""
+    width = frame.shape[1]
+    fps_text = f"{fps:.0f} fps"
+    draw_text(frame, fps_text, (width - text_width(fps_text, 0.55) - 14, 62), fps_color(fps), 0.55)
+    if detection:
+        draw_text(frame, detection, (width - text_width(detection, 0.42) - 14, 78), GREY, 0.42)
+
+
+def draw_header(frame, gesture, control_on, fired, fps, detection=""):
     """Big gesture name, CONTROL ON/OFF, frames per second and the action that just fired."""
     width = frame.shape[1]
     darken(frame, 0, HEADER_HEIGHT)
@@ -75,9 +82,7 @@ def draw_header(frame, gesture, control_on, fired, fps):
     state_x = width - text_width(state, 0.7, 2) - 14
     draw_text(frame, state, (state_x, 36), color, 0.7, 2)
 
-    fps_text = f"{fps:.0f} fps"
-    fps_x = width - text_width(fps_text, 0.55) - 14
-    draw_text(frame, fps_text, (fps_x, 70), fps_color(fps), 0.55)
+    draw_speed(frame, fps, detection)
 
     if fired:
         draw_text(frame, f"Action: {fired}", (14, 72), GREEN, 0.65, 2)
@@ -117,7 +122,7 @@ def attach_panel(frame, panel):
     return np.hstack([frame, panel])
 
 
-def draw_sign_header(frame, letter, hand_seen, progress, fps):
+def draw_sign_header(frame, letter, hand_seen, progress, fps, detection=""):
     """The detected letter, big, with a bar that fills while you hold it."""
     width = frame.shape[1]
     darken(frame, 0, HEADER_HEIGHT)
@@ -136,8 +141,7 @@ def draw_sign_header(frame, letter, hand_seen, progress, fps):
 
     mode = "SIGN MODE"
     draw_text(frame, mode, (width - text_width(mode, 0.7, 2) - 14, 36), AMBER, 0.7, 2)
-    fps_text = f"{fps:.0f} fps"
-    draw_text(frame, fps_text, (width - text_width(fps_text, 0.55) - 14, 70), fps_color(fps), 0.55)
+    draw_speed(frame, fps, detection)
 
 
 def draw_word(frame, word):

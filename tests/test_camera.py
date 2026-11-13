@@ -1,5 +1,8 @@
 """Camera thread logic with a fake capture, so no webcam is needed."""
 
+import threading
+import time
+
 import camera
 
 
@@ -8,6 +11,7 @@ class FakeCapture:
         self.frames = list(frames)
 
     def read(self):
+        time.sleep(0.01)
         if not self.frames:
             return False, None
         return True, self.frames.pop(0)
@@ -22,24 +26,33 @@ def make_camera(frames):
     cam.frame = None
     cam.frame_number = 0
     cam.running = False
-    cam.new_frame = camera.threading.Condition()
+    cam.new_frame = threading.Condition()
     return cam
 
 
-def test_reads_newest_frame_and_stops_at_the_end():
+def wait_until_stopped(cam):
+    deadline = time.monotonic() + 2
+    while not cam.stopped() and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+
+def test_latest_never_waits():
+    cam = make_camera(["a"])
+    started = time.monotonic()
+    assert cam.latest() == (0, None)
+    assert time.monotonic() - started < 0.05
+
+
+def test_keeps_only_the_newest_frame():
     cam = make_camera(["a", "b", "c"])
     cam.start()
-    number, frame = cam.read(0)
-    assert frame in {"a", "b", "c"}
-    while frame is not None:
-        last = frame
-        number, frame = cam.read(number, timeout=0.5)
-    assert last == "c"
+    wait_until_stopped(cam)
+    assert cam.latest() == (3, "c")
 
 
-def test_never_returns_the_same_frame_twice():
+def test_reports_when_the_camera_stops():
     cam = make_camera(["a"])
     cam.start()
-    number, frame = cam.read(0)
-    assert frame == "a"
-    assert cam.read(number, timeout=0.2) == (number, None)
+    assert not cam.stopped()
+    wait_until_stopped(cam)
+    assert cam.stopped()

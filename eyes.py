@@ -1,41 +1,14 @@
-"""Eye tracking with MediaPipe FaceLandmarker: blinks, and a rough gaze direction.
+"""Blinks and a rough gaze direction from MediaPipe FaceLandmarker scores.
 
 The face model gives scores from 0 to 1 for things like "left eye closed" or
 "right eye looking in". Blinks from these scores are reliable. Gaze is only a
-rough guess, so it is shown on screen and never used to click.
+rough guess, so it is shown on screen and never used to click. The face model
+itself runs in the background, see FaceTracker in tracking.py.
 """
-
-import cv2
-import mediapipe as mp
-from mediapipe.tasks.python import BaseOptions
-from mediapipe.tasks.python.vision import FaceLandmarker, FaceLandmarkerOptions, RunningMode
 
 import config
 
 DOUBLE_BLINK = "double_blink"
-
-
-class FaceTracker:
-    def __init__(self, model_path):
-        options = FaceLandmarkerOptions(
-            base_options=BaseOptions(model_asset_path=model_path),
-            running_mode=RunningMode.VIDEO,
-            num_faces=1,
-            output_face_blendshapes=True,
-        )
-        self.landmarker = FaceLandmarker.create_from_options(options)
-
-    def scores(self, frame, timestamp_ms):
-        """Return a dict of face scores like {"eyeBlinkLeft": 0.8}, or None."""
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-        result = self.landmarker.detect_for_video(image, timestamp_ms)
-        if not result.face_blendshapes:
-            return None
-        return {shape.category_name: shape.score for shape in result.face_blendshapes[0]}
-
-    def close(self):
-        self.landmarker.close()
 
 
 def eyes_closed_score(scores):
