@@ -10,6 +10,7 @@ from mediapipe.tasks.python import BaseOptions
 from mediapipe.tasks.python.vision import HandLandmarker, HandLandmarkerOptions, RunningMode
 
 import actions
+import asl_letters
 import config
 from camera import Camera
 from fps import FpsCounter
@@ -18,6 +19,7 @@ import instructions
 import overlay
 import permissions
 from debounce import GestureStabilizer, TriggerGate
+from speller import Speller
 
 # Created the first time you hide the help panel, so it only opens by itself once.
 HELP_SEEN_FILE = Path(__file__).parent / ".help_seen"
@@ -25,9 +27,21 @@ FIRED_SHOW_SECONDS = 1.5
 
 KEYS = [
     ("space", "control on or off"),
+    ("s", "sign language mode"),
     ("h", "show or hide this help"),
     ("q", "quit"),
 ]
+
+SIGN_KEYS = [
+    ("s", "back to hand control"),
+    ("space", "add a space"),
+    ("backspace", "delete a letter"),
+    ("c", "clear the word"),
+    ("h", "show or hide this help"),
+    ("q", "quit"),
+]
+
+BACKSPACE_KEYS = {8, 127}  # Windows sends 8, Mac sends 127
 
 
 def create_landmarker():
@@ -127,27 +141,39 @@ class App:
     def __init__(self, can_control):
         self.can_control = can_control
         self.controller = GestureController()
+        self.speller = Speller(config.SIGN_HOLD_SECONDS, config.SIGN_SPACE_SECONDS)
+        self.sign_mode = False
+        self.letter = None
         self.control_on = False  # always start safe
         self.show_help = not HELP_SEEN_FILE.exists()
         self.message = ""
         self.fired = None
         self.fired_at = 0.0
-        self.panel = None
+        self.panels = {}
         self.fps = FpsCounter()
 
     def update(self, landmarks):
+        """Process one frame. Returns the gesture name to show."""
+        if self.sign_mode:
+            self.letter = asl_letters.classify_letter(landmarks)
+            self.speller.update(self.letter, landmarks is not None, time.monotonic())
+            return gestures.classify(landmarks)
+
         raw, stable, event = self.controller.read_gesture(landmarks)
         if self.control_on:
-            try:
-                fired = self.controller.act(raw, stable, event, landmarks)
-            except pyautogui.FailSafeException:
-                self.control_on = False
-                self.message = "failsafe hit, control turned off"
-                fired = None
-            if fired:
-                self.fired = instructions.action_words(fired)
-                self.fired_at = time.monotonic()
+            self.run_actions(raw, stable, event, landmarks)
         return raw
+
+    def run_actions(self, raw, stable, event, landmarks):
+        try:
+            fired = self.controller.act(raw, stable, event, landmarks)
+        except pyautogui.FailSafeException:
+            self.control_on = False
+            self.message = "failsafe hit, control turned off"
+            return
+        if fired:
+            self.fired = instructions.action_words(fired)
+            self.fired_at = time.monotonic()
 
     def recent_action(self):
         if time.monotonic() - self.fired_at < FIRED_SHOW_SECONDS:
@@ -160,7 +186,10 @@ class App:
             lines.append(("make a fist to get ready", overlay.AMBER))
         if self.message:
             lines.append((self.message, overlay.RED))
-        lines.append(("h: help   space: control   q: quit", overlay.GREY))
+        if self.sign_mode:
+            lines.append(("s: leave   space: space   backspace: delete   c: clear", overlay.GREY))
+        else:
+            lines.append(("h: help   space: control   s: sign mode   q: quit", overlay.GREY))
         return lines
 
     def draw(self, frame, landmarks, gesture):
@@ -168,28 +197,57 @@ class App:
         if landmarks:
             overlay.draw_hand(frame, landmarks)
         fps = self.fps.tick(time.monotonic())
-        overlay.draw_header(frame, gesture, self.control_on, self.recent_action(), fps)
+        if self.sign_mode:
+            progress = self.speller.progress(time.monotonic())
+            overlay.draw_sign_header(frame, self.letter, landmarks is not None, progress, fps)
+            overlay.draw_word(frame, self.speller.word)
+        else:
+            overlay.draw_header(frame, gesture, self.control_on, self.recent_action(), fps)
         overlay.draw_footer(frame, self.footer_lines())
         if self.show_help:
             frame = overlay.attach_panel(frame, self.help_panel(frame.shape[0]))
         return frame
 
     def help_panel(self, height):
-        # The panel never changes while running, so draw it once.
-        if self.panel is None or self.panel.shape[0] != height:
-            self.panel = overlay.help_panel(height, KEYS)
-        return self.panel
+        # Each panel never changes while running, so draw it once.
+        key = (self.sign_mode, height)
+        if key not in self.panels:
+            if self.sign_mode:
+                self.panels[key] = overlay.sign_help_panel(height, SIGN_KEYS)
+            else:
+                self.panels[key] = overlay.help_panel(height, KEYS)
+        return self.panels[key]
 
     def handle_key(self, key):
         if key == ord("h"):
             self.toggle_help()
+        elif key == ord("s"):
+            self.toggle_sign_mode()
+        elif self.sign_mode:
+            self.handle_sign_key(key)
         elif key == ord(" "):
             self.toggle_control()
+
+    def handle_sign_key(self, key):
+        if key in BACKSPACE_KEYS:
+            self.speller.backspace()
+        elif key == ord("c"):
+            self.speller.clear()
+        elif key == ord(" "):
+            self.speller.add(" ")
 
     def toggle_help(self):
         self.show_help = not self.show_help
         if not self.show_help:
             HELP_SEEN_FILE.touch()
+
+    def toggle_sign_mode(self):
+        self.sign_mode = not self.sign_mode
+        # Hand control is always off while signing, so letters never click anything.
+        self.control_on = False
+        self.controller.gate.disarm()
+        actions.stop_cursor()
+        self.message = ""
 
     def toggle_control(self):
         if not self.can_control:

@@ -79,3 +79,13 @@ CURSOR_FAST_PIXELS = 120
 # The cursor follows the index knuckle, which stays still while you pinch.
 # Set to True to follow the fingertip instead.
 CURSOR_FOLLOWS_TIP = False
+
+# Sign language mode. A finger is straight when its tip reaches at least
+# ASL_STRAIGHT_RATIO times as far from the wrist as its knuckle, and curled
+# below ASL_CURLED_RATIO. In between counts as bent (used for C and O).
+ASL_STRAIGHT_RATIO = 1.5
+ASL_CURLED_RATIO = 1.1
+ASL_TOUCH_RATIO = 0.25  # fingertips this close (times hand size) are touching
+ASL_SPREAD_DEGREES = 12  # index and middle this far apart is V, closer is U
+SIGN_HOLD_SECONDS = 1.0  # hold a letter this long to add it to the word
+SIGN_SPACE_SECONDS = 1.5  # take your hand away this long to add a space

@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 from mediapipe.tasks.python.vision import HandLandmarksConnections
 
+import asl_letters
 import gestures
 import instructions
 
@@ -114,3 +115,55 @@ def help_panel(height, keys):
 
 def attach_panel(frame, panel):
     return np.hstack([frame, panel])
+
+
+def draw_sign_header(frame, letter, hand_seen, progress, fps):
+    """The detected letter, big, with a bar that fills while you hold it."""
+    width = frame.shape[1]
+    darken(frame, 0, HEADER_HEIGHT)
+
+    if letter:
+        draw_text(frame, letter, (14, 56), WHITE, 1.8, 3)
+    elif hand_seen:
+        draw_text(frame, "?", (14, 56), AMBER, 1.8, 3)
+    else:
+        draw_text(frame, "NO HAND", (14, 48), GREY, 1.0, 2)
+
+    if progress > 0:
+        bar_end = 70 + int(progress * 120)
+        cv2.rectangle(frame, (70, 40), (190, 48), GREY, 1)
+        cv2.rectangle(frame, (70, 40), (bar_end, 48), GREEN, -1)
+
+    mode = "SIGN MODE"
+    draw_text(frame, mode, (width - text_width(mode, 0.7, 2) - 14, 36), AMBER, 0.7, 2)
+    fps_text = f"{fps:.0f} fps"
+    draw_text(frame, fps_text, (width - text_width(fps_text, 0.55) - 14, 70), fps_color(fps), 0.55)
+
+
+def draw_word(frame, word):
+    """The word so far, in a bar above the footer."""
+    height = frame.shape[0]
+    top = height - 86
+    darken(frame, top, top + 46)
+    draw_text(frame, f"Word: {word}_", (14, top + 32), WHITE, 0.9, 2)
+
+
+def sign_help_panel(height, keys):
+    panel = np.full((height, PANEL_WIDTH, 3), PANEL_COLOR, dtype=np.uint8)
+    lines = [
+        ("Sign language", WHITE, 0.75, 2),
+        (" ".join(asl_letters.SUPPORTED_LETTERS), WHITE, 0.6, 2),
+        ("Hold a letter still for a second", GREY, 0.5, 1),
+        ("to add it to the word.", GREY, 0.5, 1),
+        ("To repeat a letter, drop it and", GREY, 0.5, 1),
+        ("sign it again.", GREY, 0.5, 1),
+        ("Move your hand away to add a space.", GREY, 0.5, 1),
+        ("Hand control is off in this mode.", AMBER, 0.5, 1),
+        ("", GREY, 0.5, 1),
+        ("Keys", WHITE, 0.75, 2),
+    ] + [(f"{key}: {meaning}", GREY, 0.5, 1) for key, meaning in keys]
+    y = 34
+    for text, color, size, thickness in lines:
+        cv2.putText(panel, text, (16, y), FONT, size, color, thickness, cv2.LINE_AA)
+        y += 32 if thickness == 2 else 24
+    return panel
