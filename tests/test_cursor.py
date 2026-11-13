@@ -35,3 +35,16 @@ def test_smoother_reset():
     smoother.update((0, 0))
     smoother.reset()
     assert smoother.update((100, 100)) == (100, 100)
+
+
+def test_big_moves_get_less_smoothing():
+    smoother = Smoother(0.25, fast_pixels=100)
+    smoother.update((0, 0))
+    assert smoother.update((200, 0)) == (200, 0)
+
+
+def test_small_shakes_are_smoothed():
+    smoother = Smoother(0.25, fast_pixels=100)
+    smoother.update((0, 0))
+    x, _ = smoother.update((4, 0))
+    assert x < 2

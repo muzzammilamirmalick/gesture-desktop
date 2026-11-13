@@ -1,4 +1,6 @@
-"""Turns a fingertip position in the camera frame into a smooth screen position."""
+"""Turns a hand position in the camera frame into a smooth screen position."""
+
+import math
 
 
 def map_to_screen(point, screen_width, screen_height, margin):
@@ -18,11 +20,21 @@ def map_to_screen(point, screen_width, screen_height, margin):
 
 
 class Smoother:
-    """Exponential moving average so the cursor does not jitter."""
+    """Moving average so the cursor does not jitter.
 
-    def __init__(self, amount):
+    With fast_pixels set, the smoothing eases off as the jump gets bigger, so
+    small shakes are calmed but quick moves are not dragged behind.
+    """
+
+    def __init__(self, amount, fast_pixels=None):
         self.amount = amount
+        self.fast_pixels = fast_pixels
         self.position = None
+
+    def amount_for(self, jump):
+        if not self.fast_pixels:
+            return self.amount
+        return min(1.0, self.amount + jump / self.fast_pixels)
 
     def reset(self):
         self.position = None
@@ -32,8 +44,9 @@ class Smoother:
             self.position = point
         else:
             old_x, old_y = self.position
+            amount = self.amount_for(math.dist(self.position, point))
             self.position = (
-                old_x + self.amount * (point[0] - old_x),
-                old_y + self.amount * (point[1] - old_y),
+                old_x + amount * (point[0] - old_x),
+                old_y + amount * (point[1] - old_y),
             )
         return self.position

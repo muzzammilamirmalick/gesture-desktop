@@ -2,7 +2,7 @@ import actions
 import config
 
 KNOWN_GESTURES = {
-    "pinch", "point", "swipe_right", "swipe_left",
+    "pinch", "pinch_hold", "point", "swipe_right", "swipe_left",
     "open_palm", "thumbs_up", "thumbs_down", "fist",
 }
 

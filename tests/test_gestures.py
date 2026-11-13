@@ -97,3 +97,17 @@ def test_swipe_fires_once_then_needs_new_movement():
     detector.update(0.2, 0.0)
     assert detector.update(0.5, 0.1) == gestures.SWIPE_RIGHT
     assert detector.update(0.52, 0.15) is None
+
+
+def test_quick_pinch_is_reported_on_release():
+    tracker = gestures.PinchTracker(hold_seconds=1.0)
+    assert tracker.update(gestures.PINCH, 0.0) is None
+    assert tracker.update(gestures.PINCH, 0.3) is None
+    assert tracker.update(gestures.POINT, 0.4) == gestures.PINCH
+
+
+def test_held_pinch_is_reported_once_and_never_clicks():
+    tracker = gestures.PinchTracker(hold_seconds=1.0)
+    results = [tracker.update(gestures.PINCH, t / 10) for t in range(20)]
+    assert results.count(gestures.PINCH_HOLD) == 1
+    assert tracker.update(gestures.POINT, 2.0) is None

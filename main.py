@@ -71,36 +71,52 @@ class GestureController:
 
     def __init__(self):
         self.stabilizer = GestureStabilizer(config.STABLE_FRAMES)
-        self.gate = TriggerGate(one_shot_gestures(), config.RESET_GESTURES)
+        self.gate = TriggerGate(one_shot_gestures(), config.RESET_GESTURES, config.REARM_GESTURES)
         self.swipes = gestures.SwipeDetector()
+        self.pinches = gestures.PinchTracker()
 
     def read_gesture(self, landmarks):
-        """Return (raw gesture, stable gesture, event). The event can be a swipe."""
+        """Return (raw gesture, stable gesture, event).
+
+        The event is what the trigger gate sees: a swipe, a finished pinch, a
+        held pinch, or just the stable gesture.
+        """
         raw = gestures.classify(landmarks)
         stable = self.stabilizer.update(raw) or gestures.NO_HAND
+        now = time.monotonic()
 
-        # Swipes are tracked on the raw pose so a fast move is not lost to smoothing.
-        if raw == gestures.TWO_FINGERS:
-            swipe = self.swipes.update(gestures.two_finger_x(landmarks), time.monotonic())
-            if swipe:
-                return raw, stable, swipe
-        else:
-            self.swipes.reset()
+        swipe = self.read_swipe(raw, landmarks, now)
+        pinch = self.pinches.update(stable, now)
+        if swipe:
+            return raw, stable, swipe
+        if pinch:
+            return raw, stable, pinch
+        if stable == gestures.PINCH:
+            return raw, stable, None  # still deciding between click and hold
         return raw, stable, stable
 
-    def act(self, gesture, event, landmarks):
+    def read_swipe(self, raw, landmarks, now):
+        # Swipes use the raw pose so a fast move is not lost to smoothing.
+        if raw != gestures.TWO_FINGERS:
+            self.swipes.reset()
+            return None
+        return self.swipes.update(gestures.two_finger_x(landmarks), now)
+
+    def act(self, raw, stable, event, landmarks):
         """Run actions for this frame. Returns the one-shot action that fired, if any."""
-        action = config.GESTURE_ACTIONS.get(gesture)
-        if action in actions.CONTINUOUS_ACTIONS and landmarks:
+        fired = None
+        if self.gate.update(event):
+            fired = config.GESTURE_ACTIONS[event]
+            actions.run(fired)
+
+        # Only move while both the raw and stable pose agree, so the cursor
+        # freezes as soon as the fingers start closing for a pinch.
+        action = config.GESTURE_ACTIONS.get(stable)
+        if action in actions.CONTINUOUS_ACTIONS and raw == stable and landmarks:
             actions.run(action, landmarks)
         else:
             actions.stop_cursor()
-
-        if self.gate.update(event):
-            action = config.GESTURE_ACTIONS[event]
-            actions.run(action)
-            return action
-        return None
+        return fired
 
 
 class App:
@@ -118,7 +134,7 @@ class App:
         raw, stable, event = self.controller.read_gesture(landmarks)
         if self.control_on:
             try:
-                fired = self.controller.act(stable, event, landmarks)
+                fired = self.controller.act(raw, stable, event, landmarks)
             except pyautogui.FailSafeException:
                 self.control_on = False
                 self.message = "failsafe hit, control turned off"

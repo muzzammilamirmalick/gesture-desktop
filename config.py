@@ -3,8 +3,9 @@
 # Which gesture triggers which action. Action names are defined in actions.py.
 # Set a value to None to switch a gesture off.
 GESTURE_ACTIONS = {
-    "pinch": "click",
     "point": "move_cursor",
+    "pinch": "click",  # quick pinch, fires when you let go
+    "pinch_hold": "close_window",  # keep pinching for PINCH_HOLD_SECONDS
     "swipe_right": "next_window",
     "swipe_left": "previous_window",
     "open_palm": "play_pause",
@@ -18,6 +19,7 @@ GESTURE_ACTIONS = {
 # pyautogui key names. "minimize" is available for any gesture you want to map.
 SHORTCUTS = {
     "windows": {
+        "close_window": ["ctrl", "w"],
         "next_window": ["alt", "tab"],
         "previous_window": ["shift", "alt", "tab"],
         "minimize": ["win", "down"],
@@ -26,6 +28,7 @@ SHORTCUTS = {
         "volume_down": ["volumedown"],
     },
     "mac": {
+        "close_window": ["command", "w"],
         "next_window": ["command", "tab"],
         "previous_window": ["shift", "command", "tab"],
         "minimize": ["command", "m"],
@@ -39,6 +42,13 @@ SHORTCUTS = {
 
 # Gestures that re-arm the trigger after an action has fired.
 RESET_GESTURES = {"fist"}
+
+# Extra poses that re-arm one action. Going back to pointing after a click
+# lets you click again without making a fist in between.
+REARM_GESTURES = {"pinch": {"point"}}
+
+# How long a pinch must be held to count as pinch and hold.
+PINCH_HOLD_SECONDS = 1.0
 
 # Webcam
 CAMERA_INDEX = 0
@@ -58,7 +68,12 @@ SWIPE_MAX_SECONDS = 0.5
 # Debounce: a gesture must be seen this many frames in a row to count.
 STABLE_FRAMES = 4
 
-# Cursor: ignore this much of each frame edge so you can reach screen corners,
-# and smooth movement (0 = frozen, 1 = no smoothing).
-CURSOR_MARGIN = 0.15
-CURSOR_SMOOTHING = 0.3
+# Cursor: ignore this much of each frame edge so you can reach screen corners.
+CURSOR_MARGIN = 0.2
+# Smoothing for small moves (0 = frozen, 1 = none). Big moves get less smoothing
+# so the cursor keeps up: a jump of CURSOR_FAST_PIXELS in one frame is not smoothed.
+CURSOR_SMOOTHING = 0.25
+CURSOR_FAST_PIXELS = 120
+# The cursor follows the index knuckle, which stays still while you pinch.
+# Set to True to follow the fingertip instead.
+CURSOR_FOLLOWS_TIP = False

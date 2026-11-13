@@ -12,7 +12,7 @@ pyautogui.FAILSAFE = True  # push the mouse into a screen corner to stop everyth
 pyautogui.PAUSE = 0
 
 OS_NAME = shortcuts.detect_os()
-cursor_smoother = Smoother(config.CURSOR_SMOOTHING)
+cursor_smoother = Smoother(config.CURSOR_SMOOTHING, config.CURSOR_FAST_PIXELS)
 
 
 def click():
@@ -32,9 +32,15 @@ def press_shortcut(action, os_name=None):
     press_keys(shortcuts.shortcut_for(action, os_name or OS_NAME))
 
 
+def cursor_point(landmarks):
+    if config.CURSOR_FOLLOWS_TIP:
+        return landmarks[gestures.INDEX_TIP]
+    return landmarks[gestures.INDEX_MCP]
+
+
 def move_cursor(landmarks):
     width, height = pyautogui.size()
-    target = map_to_screen(landmarks[gestures.INDEX_TIP], width, height, config.CURSOR_MARGIN)
+    target = map_to_screen(cursor_point(landmarks), width, height, config.CURSOR_MARGIN)
     x, y = cursor_smoother.update(target)
     pyautogui.moveTo(x, y)
 

@@ -33,6 +33,7 @@ UNKNOWN = "unknown"
 NO_HAND = "no_hand"
 SWIPE_RIGHT = "swipe_right"
 SWIPE_LEFT = "swipe_left"
+PINCH_HOLD = "pinch_hold"
 
 
 def distance(a, b):
@@ -135,3 +136,41 @@ class SwipeDetector:
             self.reset()
             return SWIPE_LEFT
         return None
+
+
+class PinchTracker:
+    """Tells a quick pinch apart from a pinch that is held.
+
+    A quick pinch is reported when you let go, so holding never clicks first.
+    A held pinch is reported once, as soon as it has lasted long enough.
+    """
+
+    def __init__(self, hold_seconds=None):
+        self.hold_seconds = hold_seconds or config.PINCH_HOLD_SECONDS
+        self.started_at = None
+        self.hold_reported = False
+
+    def update(self, gesture, now):
+        """Feed the stable gesture. Returns PINCH, PINCH_HOLD or None."""
+        if gesture == PINCH:
+            return self.while_pinching(now)
+        if self.started_at is None:
+            return None
+        return self.released(gesture)
+
+    def while_pinching(self, now):
+        if self.started_at is None:
+            self.started_at = now
+            self.hold_reported = False
+        if not self.hold_reported and now - self.started_at >= self.hold_seconds:
+            self.hold_reported = True
+            return PINCH_HOLD
+        return None
+
+    def released(self, gesture):
+        was_held = self.hold_reported
+        self.started_at = None
+        # Losing the hand mid pinch is not a click.
+        if was_held or gesture == NO_HAND:
+            return None
+        return PINCH

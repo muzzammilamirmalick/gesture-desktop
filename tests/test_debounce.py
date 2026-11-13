@@ -51,3 +51,12 @@ def test_disarm():
     gate.update("fist")
     gate.disarm()
     assert gate.update("pinch") is False
+
+
+def test_rearm_pose_only_rearms_its_own_trigger():
+    gate = TriggerGate(triggers={"pinch", "thumbs_up"}, reset_gestures={"fist"}, rearm={"pinch": {"point"}})
+    gate.update("fist")
+    assert gate.update("pinch") is True
+    gate.update("point")
+    assert gate.update("thumbs_up") is False
+    assert gate.update("pinch") is True
