@@ -43,7 +43,7 @@ RESET_GESTURES = {"fist"}
 # Webcam
 CAMERA_INDEX = 0
 WINDOW_NAME = "Gesture Control"
-WINDOW_WIDTH = 480
+WINDOW_WIDTH = 640
 MODEL_PATH = "models/hand_landmarker.task"
 
 # Gesture rules. Distances are measured as a fraction of hand size

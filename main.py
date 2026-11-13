@@ -1,6 +1,7 @@
 """Webcam window that turns hand gestures into mouse and keyboard actions."""
 
 import time
+from pathlib import Path
 
 import cv2
 import mediapipe as mp
@@ -11,9 +12,20 @@ from mediapipe.tasks.python.vision import HandLandmarker, HandLandmarkerOptions,
 import actions
 import config
 import gestures
+import instructions
 import overlay
 import permissions
 from debounce import GestureStabilizer, TriggerGate
+
+# Created the first time you hide the help panel, so it only opens by itself once.
+HELP_SEEN_FILE = Path(__file__).parent / ".help_seen"
+FIRED_SHOW_SECONDS = 1.5
+
+KEYS = [
+    ("space", "control on or off"),
+    ("h", "show or hide this help"),
+    ("q", "quit"),
+]
 
 
 def create_landmarker():
@@ -50,19 +62,6 @@ def resize_for_window(frame):
     return cv2.resize(frame, (config.WINDOW_WIDTH, new_height))
 
 
-def status_lines(control_on, armed, last_action, message):
-    if not control_on:
-        lines = [("CONTROL OFF", overlay.RED)]
-    else:
-        lines = [("CONTROL ON", overlay.GREEN)]
-        lines.append(("ready", overlay.GREEN) if armed else ("make a fist to arm", overlay.GREY))
-        if last_action:
-            lines.append((f"last: {last_action}", overlay.WHITE))
-    if message:
-        lines.append((message, overlay.RED))
-    return lines
-
-
 def window_closed():
     return cv2.getWindowProperty(config.WINDOW_NAME, cv2.WND_PROP_VISIBLE) < 1
 
@@ -74,23 +73,23 @@ class GestureController:
         self.stabilizer = GestureStabilizer(config.STABLE_FRAMES)
         self.gate = TriggerGate(one_shot_gestures(), config.RESET_GESTURES)
         self.swipes = gestures.SwipeDetector()
-        self.last_action = None
 
     def read_gesture(self, landmarks):
-        """Return (stable gesture, event). The event can be a swipe."""
+        """Return (raw gesture, stable gesture, event). The event can be a swipe."""
         raw = gestures.classify(landmarks)
-        gesture = self.stabilizer.update(raw) or gestures.NO_HAND
+        stable = self.stabilizer.update(raw) or gestures.NO_HAND
 
         # Swipes are tracked on the raw pose so a fast move is not lost to smoothing.
         if raw == gestures.TWO_FINGERS:
             swipe = self.swipes.update(gestures.two_finger_x(landmarks), time.monotonic())
             if swipe:
-                return gesture, swipe
+                return raw, stable, swipe
         else:
             self.swipes.reset()
-        return gesture, gesture
+        return raw, stable, stable
 
     def act(self, gesture, event, landmarks):
+        """Run actions for this frame. Returns the one-shot action that fired, if any."""
         action = config.GESTURE_ACTIONS.get(gesture)
         if action in actions.CONTINUOUS_ACTIONS and landmarks:
             actions.run(action, landmarks)
@@ -100,7 +99,84 @@ class GestureController:
         if self.gate.update(event):
             action = config.GESTURE_ACTIONS[event]
             actions.run(action)
-            self.last_action = action
+            return action
+        return None
+
+
+class App:
+    def __init__(self, can_control):
+        self.can_control = can_control
+        self.controller = GestureController()
+        self.control_on = False  # always start safe
+        self.show_help = not HELP_SEEN_FILE.exists()
+        self.message = ""
+        self.fired = None
+        self.fired_at = 0.0
+        self.panel = None
+
+    def update(self, landmarks):
+        raw, stable, event = self.controller.read_gesture(landmarks)
+        if self.control_on:
+            try:
+                fired = self.controller.act(stable, event, landmarks)
+            except pyautogui.FailSafeException:
+                self.control_on = False
+                self.message = "failsafe hit, control turned off"
+                fired = None
+            if fired:
+                self.fired = instructions.action_words(fired)
+                self.fired_at = time.monotonic()
+        return raw
+
+    def recent_action(self):
+        if time.monotonic() - self.fired_at < FIRED_SHOW_SECONDS:
+            return self.fired
+        return None
+
+    def footer_lines(self):
+        lines = []
+        if self.control_on and not self.controller.gate.armed:
+            lines.append(("make a fist to get ready", overlay.AMBER))
+        if self.message:
+            lines.append((self.message, overlay.RED))
+        lines.append(("h: help   space: control   q: quit", overlay.GREY))
+        return lines
+
+    def draw(self, frame, landmarks, gesture):
+        frame = resize_for_window(frame)
+        if landmarks:
+            overlay.draw_hand(frame, landmarks)
+        overlay.draw_header(frame, gesture, self.control_on, self.recent_action())
+        overlay.draw_footer(frame, self.footer_lines())
+        if self.show_help:
+            frame = overlay.attach_panel(frame, self.help_panel(frame.shape[0]))
+        return frame
+
+    def help_panel(self, height):
+        # The panel never changes while running, so draw it once.
+        if self.panel is None or self.panel.shape[0] != height:
+            self.panel = overlay.help_panel(height, KEYS)
+        return self.panel
+
+    def handle_key(self, key):
+        if key == ord("h"):
+            self.toggle_help()
+        elif key == ord(" "):
+            self.toggle_control()
+
+    def toggle_help(self):
+        self.show_help = not self.show_help
+        if not self.show_help:
+            HELP_SEEN_FILE.touch()
+
+    def toggle_control(self):
+        if not self.can_control:
+            self.message = "no input permission, see terminal"
+            return
+        self.control_on = not self.control_on
+        self.controller.gate.disarm()  # never fire straight away after switching on
+        actions.stop_cursor()
+        self.message = ""
 
 
 def main():
@@ -115,13 +191,11 @@ def main():
         print(permissions.MAC_PERMISSION_HELP)
 
     landmarker = create_landmarker()
-    controller = GestureController()
+    app = App(can_control)
 
     cv2.namedWindow(config.WINDOW_NAME)
     cv2.setWindowProperty(config.WINDOW_NAME, cv2.WND_PROP_TOPMOST, 1)
     start = time.monotonic()
-    control_on = False  # always start safe
-    message = ""
 
     while True:
         ok, frame = camera.read()
@@ -131,33 +205,13 @@ def main():
 
         timestamp_ms = int((time.monotonic() - start) * 1000)
         landmarks = find_hand(landmarker, frame, timestamp_ms)
-        gesture, event = controller.read_gesture(landmarks)
-
-        if control_on:
-            try:
-                controller.act(gesture, event, landmarks)
-            except pyautogui.FailSafeException:
-                control_on = False
-                message = "failsafe hit, control turned off"
-
-        frame = resize_for_window(frame)
-        if landmarks:
-            overlay.draw_hand(frame, landmarks)
-        lines = status_lines(control_on, controller.gate.armed, controller.last_action, message)
-        overlay.draw_status(frame, event, lines)
-        overlay.draw_help(frame, "space: control on/off   q: quit")
-        cv2.imshow(config.WINDOW_NAME, frame)
+        gesture = app.update(landmarks)
+        cv2.imshow(config.WINDOW_NAME, app.draw(frame, landmarks, gesture))
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord("q") or window_closed():
             break
-        if key == ord(" ") and not can_control:
-            message = "no input permission, see terminal"
-        elif key == ord(" "):
-            control_on = not control_on
-            controller.gate.disarm()  # never fire straight away after switching on
-            actions.stop_cursor()
-            message = ""
+        app.handle_key(key)
 
     camera.release()
     landmarker.close()
