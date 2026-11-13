@@ -15,7 +15,7 @@ import instructions
 import overlay
 import permissions
 from camera import Camera
-from controller import MENU, GestureController
+from controller import MENU, SCROLL, SWITCH, VOLUME, GestureController, scroll_speed, volume_steps
 from debounce import GestureStabilizer
 from fps import FpsCounter
 from speller import Speller
@@ -24,6 +24,7 @@ from tracking import FaceTracker, HandTracker
 # Created when you close the intro screen, so it only shows on the first run.
 INTRO_SEEN_FILE = Path(__file__).parent / ".intro_seen"
 TOAST_SECONDS = 1.2
+RIPPLE_COLORS = {"click": overlay.GREEN, "pick": overlay.ACCENT, "flash": overlay.ACCENT}
 NO_KEY = 255
 
 KEY_LINES = [
@@ -67,6 +68,8 @@ class App:
         self.message = ""
         self.toast = None
         self.toast_at = 0.0
+        self.ripples = []
+        self.flash_at = None
         self.panels = {}
         self.fps = FpsCounter()
         self.eyes_on = False  # the face model adds load, so it starts off
@@ -101,7 +104,16 @@ class App:
         except pyautogui.FailSafeException:
             self.failsafe()
         for item in self.controller.take_feedback():
+            self.show_feedback(item, now)
+
+    def show_feedback(self, item, now):
+        """A label for everything, a ripple where it happened, a flash for screenshots."""
+        if item.kind != "click":
             self.show_toast(item.text)
+        if item.position and item.kind in RIPPLE_COLORS:
+            self.ripples.append((item.position, now, RIPPLE_COLORS[item.kind]))
+        if item.kind == "flash":
+            self.flash_at = now
 
     def tick(self, now):
         """Runs on every pass of the main loop, between detections too."""
@@ -109,6 +121,7 @@ class App:
             return
         try:
             actions.follow_cursor(now)
+            self.controller.tick(now)
         except pyautogui.FailSafeException:
             self.failsafe()
 
@@ -158,7 +171,7 @@ class App:
     def mode_name(self):
         if not self.control_on:
             return "Paused"
-        return "Menu" if self.controller.mode == MENU else "Pointer"
+        return self.controller.mode_name()
 
     def hint(self, now):
         if not self.can_control:
@@ -201,11 +214,32 @@ class App:
         hold = controller.palm.progress(now)
         if self.control_on and hold > 0 and controller.palm_center:
             overlay.draw_hold_ring(frame, controller.palm_center, hold)
+        if self.control_on:
+            self.draw_tool(frame, now)
+        self.draw_effects(frame, now)
         overlay.draw_header(frame, self.mode_name(), instructions.hand_name(self.gesture), self.control_on, fps, detection)
         toast = self.current_toast()
         if toast:
             overlay.draw_toast(frame, toast)
         overlay.draw_hint(frame, self.hint(now), FOOTER_KEYS)
+
+    def draw_tool(self, frame, now):
+        controller = self.controller
+        offset = controller.hand_offset()
+        if controller.mode in (SCROLL, VOLUME) and not controller.tool_ready:
+            overlay.draw_start_target(frame, controller.anchor)
+        elif controller.mode == SCROLL:
+            overlay.draw_scroll_tool(frame, controller.anchor, controller.palm_center, scroll_speed(offset), config.SCROLL_DEAD_ZONE)
+        elif controller.mode == VOLUME:
+            overlay.draw_volume_tool(frame, controller.anchor, controller.palm_center, volume_steps(offset), config.VOLUME_STEP)
+        elif controller.mode == SWITCH:
+            overlay.draw_switch_tool(frame, controller.last_flick, now)
+
+    def draw_effects(self, frame, now):
+        self.ripples = [r for r in self.ripples if now - r[1] < overlay.RIPPLE_SECONDS]
+        overlay.draw_ripples(frame, self.ripples, now)
+        if self.flash_at is not None:
+            overlay.draw_flash(frame, self.flash_at, now)
 
     def draw_sign_mode(self, frame, fps, detection, now):
         if self.landmarks:
@@ -363,6 +397,7 @@ def main():
     try:
         run(camera, hands, app)
     finally:
+        actions.release_held_keys()  # never leave Alt or Cmd stuck down
         camera.release()
         hands.close()
         cv2.destroyAllWindows()

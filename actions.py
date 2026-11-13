@@ -89,3 +89,49 @@ def follow_cursor(now):
 
 def stop_cursor():
     cursor.stop()
+
+
+# What one wheel notch is worth: Windows counts 120 per notch (smaller amounts
+# scroll smoothly), the Mac counts lines.
+SCROLL_UNITS_PER_NOTCH = {"windows": 120, "mac": 3}
+
+
+class Scroller:
+    """Turns a scroll speed into many small wheel events, so scrolling is smooth."""
+
+    def __init__(self):
+        self.leftover = 0.0
+
+    def scroll(self, notches):
+        units = notches * SCROLL_UNITS_PER_NOTCH[OS_NAME] + self.leftover
+        whole = int(units)
+        self.leftover = units - whole
+        if whole:
+            pyautogui.scroll(whole)
+
+    def reset(self):
+        self.leftover = 0.0
+
+
+scroller = Scroller()
+held_keys = []
+
+
+def press_key(key):
+    pyautogui.press(key)
+
+
+def hold_key(key):
+    """Keep a key pressed (like Alt for the app switcher) until release_held_keys()."""
+    pyautogui.keyDown(key)
+    held_keys.append(key)
+
+
+def hold_shortcut(action, os_name=None):
+    for key in shortcuts.shortcut_for(action, os_name or OS_NAME):
+        hold_key(key)
+
+
+def release_held_keys():
+    while held_keys:
+        pyautogui.keyUp(held_keys.pop())

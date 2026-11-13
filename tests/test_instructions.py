@@ -11,9 +11,8 @@ def test_every_menu_item_has_a_label_and_help():
 
 
 def test_every_menu_item_does_something():
-    modes = set(controller.MODE_ITEMS) if hasattr(controller, "MODE_ITEMS") else set()
     for item in config.MENU_ITEMS:
-        assert item in controller.INSTANT_ITEMS or item in modes or item in {"scroll", "volume", "switch_app"}
+        assert item in controller.INSTANT_ITEMS or item in controller.MODE_ITEMS
 
 
 def test_instant_items_have_shortcuts_on_both_systems():

@@ -1,51 +1,56 @@
 # Gesture Control (desktop)
 
-Control your computer with hand gestures from your webcam. A small always-on-top window shows your camera with the detected hand skeleton, the current gesture and whether control is on. When control is switched on, gestures send real mouse and keyboard actions to the operating system.
+Control your computer with one hand in front of your webcam. Point to move the mouse, pinch to click, and hold an open palm to open a radial menu with everything else: scroll, volume, switch app, screenshot, play or pause, close window and show desktop.
 
-It also has a sign language mode that reads static ASL letters and builds a word, and an optional eye tracking mode where blinking twice plays or pauses media.
+There is almost nothing to memorize. Two gestures are always on, and the menu shows the rest with icons and labels.
+
+It also has two optional extras: a sign language mode that reads static ASL letters and builds a word, and eye tracking where blinking twice plays or pauses media.
 
 This is the desktop half of my gesture project. It runs on Windows and Mac. Everything runs locally. Nothing is sent over the network.
 
 ## Stack
 
 - Python
-- MediaPipe HandLandmarker for the 21 hand landmarks
+- MediaPipe HandLandmarker for the 21 hand landmarks, in LIVE_STREAM mode
 - MediaPipe FaceLandmarker for blinks and gaze (optional)
 - OpenCV to read the webcam and draw the window
 - pyautogui to send mouse and keyboard actions
 - pytest for the tests
 
-## Gestures
+## How to use it
 
-| Gesture | Action |
+1. Run it. The first time, a short intro shows the three things to know. Press any key to close it.
+2. Press **space** to turn control on. The badge in the top right turns green.
+3. **Point** with your index finger to move the mouse.
+4. **Pinch** (thumb and index together) to click. Let go and pinch again to click again.
+5. **Hold an open palm** for half a second. A ring fills around your hand, then the radial menu opens around it.
+6. In the menu, **point** at an action to highlight it and **pinch** to pick it. A line from the middle of the menu to your hand shows what you are pointing at. Make a **fist**, or pinch in the middle, to close the menu without doing anything.
+
+### What is in the menu
+
+| Item | What it does |
 | --- | --- |
-| Fist | Rest. This is the neutral pose that gets everything ready to fire |
-| Point with your index finger | Move the mouse |
-| Pinch (thumb and index together), then let go | Click |
-| Pinch and hold for 1 second | Close the window (Ctrl+W on Windows, Cmd+W on Mac) |
-| Peace sign, swipe right | Next window (Alt+Tab on Windows, Cmd+Tab on Mac) |
-| Peace sign, swipe left | Previous window (Shift+Alt+Tab on Windows, Shift+Cmd+Tab on Mac) |
-| Open palm | Play or pause media |
-| Thumbs up | Volume up |
-| Thumbs down | Volume down |
-| Blink twice (eye tracking on) | Play or pause media |
+| Scroll | Bring your hand to the circle, then move it up or down to scroll the window under the mouse. The further you move, the faster it scrolls. Pinch when done. |
+| Volume | Bring your hand to the circle, then move it up or down. A slider shows each step. Pinch when done. |
+| Switch app | Opens the app switcher (Alt+Tab on Windows, Cmd+Tab on Mac). Flick your hand left or right to move through your apps, pinch to go to the highlighted one, or make a fist to cancel. |
+| Screenshot | Saves a screenshot (Win+PrintScreen saves to Pictures > Screenshots, Cmd+Shift+3 saves to the Mac desktop). The window flashes so you know it worked. |
+| Play / pause | Plays or pauses music and video. |
+| Close window | Closes the window or tab (Ctrl+W on Windows, Cmd+W on Mac). |
+| Desktop | Hides all windows (Win+D on Windows, F11 on Mac). |
 
-Any other hand shape shows **Unknown** in amber, so you can always see what the camera thinks it sees.
+Keyboard actions go to whichever window has focus. Click the window you want first (point and pinch), then use the menu.
 
-To click something: point to move the mouse onto it, then pinch and let go. The cursor freezes as soon as your fingers start closing, so it does not slide off the target. It follows your index knuckle rather than the fingertip for the same reason (set `CURSOR_FOLLOWS_TIP = True` in `config.py` to change that).
-
-All of the mappings are in `GESTURE_ACTIONS` in `config.py`. Change the action name to remap a gesture, or set it to `None` to turn it off. The on-screen help panel is built from the same mappings, so it always matches.
-
-The keys behind each action are in `SHORTCUTS` in `config.py`, with a `windows` section and a `mac` section. The app checks which OS it is running on at startup and uses the matching section. There is also a `minimize` action (Win+Down on Windows, Cmd+M on Mac) that is not mapped to a gesture.
+Change the order of the menu, or take items out, in `MENU_ITEMS` in `config.py`. The keys behind each action are in `SHORTCUTS` in `config.py`, with a `windows` section and a `mac` section. The app checks which OS it is running on at startup and uses the matching section.
 
 On Mac, pyautogui's play/pause and volume keys do nothing, so `mac_keys.py` sends the same system events that a real keyboard's media keys send.
 
 ## The window
 
-- The current gesture is shown big at the top left. Unknown poses show **UNKNOWN** in amber, and no hand shows **NO HAND** in grey.
-- **CONTROL ON** (green) or **CONTROL OFF** (red) at the top right, with frames per second under it. The FPS number turns amber below 24 and red below 15.
-- When an action fires, it shows as `Action: click` (or whatever fired) for a second and a half.
-- The help panel on the right lists every gesture and key in plain words. Press **h** to show or hide it. It opens by itself the first time you run the app, and stays hidden after you close it once.
+- **Top left:** the current mode in big letters (Paused, Pointer, Menu, Scroll, Volume, Switch app) and the hand shape under it.
+- **Top right:** a solid **CONTROL ON** (green) or **CONTROL OFF** (red) badge, the video frame rate and the detection rate.
+- **Bottom:** one line telling you what to do next, and the keys.
+- **Feedback:** every action shows a short label, and a ripple where it happened. A click shows a green ripple at your fingertip. Screenshots flash the window.
+- **Help:** press **h** for a side panel with the two gestures, every menu item and the keys.
 
 ## Keys
 
@@ -64,15 +69,37 @@ Keys only work while the gesture window has focus.
 ## Safety
 
 - Control starts **OFF**. Press **space** to turn it on.
-- After turning control on, nothing fires until you make a fist.
-- A gesture has to be held for a few frames before it counts, so quick flickers between poses are ignored.
-- Each gesture fires once, then you go back to a fist before anything fires again. Two exceptions: moving the mouse follows your hand the whole time you point, and going back to pointing after a click lets you click again without a fist.
-- A quick pinch clicks when you let go, not when you start. That way holding a pinch to close a window never clicks first.
+- A pinch only clicks once. Your fingers have to open again before the next pinch counts, and a pinch you were already making when control turned on does not click.
+- The cursor freezes the moment your fingers start closing for a pinch, so the click lands where you pointed.
+- Scroll and volume wait until your hand reaches the start circle, so nothing jumps the moment you pick them.
+- The app switcher holds Alt (or Cmd) down while you flick. It always lets go again: when you pinch, make a fist, take your hand away, turn control off, or quit.
+- The menu and the tools close by themselves if your hand is out of view for a second and a half.
 - Sign mode always turns control off, so signing letters never clicks or presses anything.
-- A double blink only plays or pauses while control is on. With control off, the window shows that it saw the blink and does nothing.
+- A double blink only plays or pauses while control is on.
 - pyautogui's failsafe is on. Push the real mouse into a screen corner and control switches off.
 
-## Sign language mode
+## Performance
+
+The main loop never waits for the models.
+
+- **Detection runs in the background.** MediaPipe runs in LIVE_STREAM mode (`tracking.py`). The loop hands over the newest frame and carries on straight away, and picks up the newest result whenever one is ready. If the model is still busy, frames are simply not sent, so nothing queues up.
+- **The cursor is predicted between detections.** Each detection updates a position and a speed (`CursorPredictor` in `cursor.py`). The loop moves the cursor on every pass using where the hand should be by now, so it glides even when detection runs slower than the camera. `CURSOR_ALPHA`, `CURSOR_BETA` and `CURSOR_MAX_AHEAD` in `config.py` tune it.
+- **Scrolling is smooth too.** It also runs on every pass of the loop, as many small wheel steps.
+- **GPU if there is one.** With `USE_GPU = True` the app tries the GPU first and falls back to the CPU. The window shows which one is in use. The pip build of MediaPipe for Windows has no GPU support, so it uses the CPU there.
+- **Small input for the model.** The camera runs at 640x480 and the models get a 320 pixel wide copy (`DETECTION_WIDTH`). The window still shows the full frame.
+- **Light drawing.** The hand is shown as a dot on each fingertip and a ring where the cursor follows, not a full skeleton.
+- **The camera is read on its own thread** (`camera.py`), so the loop always has the newest frame.
+- **Extras stay off.** Sign mode and eye tracking are off by default. The face model only loads the first time you turn eye tracking on.
+
+Measured on my Windows laptop with a fake 30 fps camera:
+
+| | Video shown | Cursor updates | Longest pause |
+| --- | --- | --- | --- |
+| Background detection, real hand model | 30 fps | about 640 a second | 3 ms (after startup) |
+| Background detection, slow machine (60 ms per detection) | 30 fps | about 640 a second | 4 ms |
+| Old blocking loop, slow machine (60 ms per detection) | 17 fps | 17 a second | 61 ms |
+
+## Sign language mode (optional)
 
 Press **s** to switch to sign mode. The window shows the letter it sees in big type, and a bar fills while you hold the letter still. After about a second the letter is added to the word at the bottom of the window.
 
@@ -82,75 +109,53 @@ It knows the ASL letters that can be read from a still hand shape: **A B C D E F
 - Take your hand out of view for about a second and a half to add a space.
 - Backspace deletes a letter and **c** clears the word.
 
-The letter rules are in `asl_letters.py`. Each finger is sorted into straight, bent or curled by how far its tip reaches from the wrist compared to its knuckle. Then the letter comes from which fingers are straight, where the thumb is, and which fingertips are touching. For example, V and U both have two straight fingers, but V has them spread apart. The thresholds are in `config.py` under `ASL_`.
+The letter rules are in `asl_letters.py`. Each finger is sorted into straight, bent or curled by how far its tip reaches from the wrist compared to its knuckle. Then the letter comes from which fingers are straight, where the thumb is, and which fingertips are touching. The thresholds are in `config.py` under `ASL_`.
 
 ## Eye tracking (optional)
 
-Press **e** to turn it on. It is off by default because it runs a second model, the MediaPipe face model, on every frame. Turn it off again when you only want hand control.
+Press **e** to turn it on. It is off by default because it runs a second model. Turn it off again when you only want hand control.
 
-- **Blink twice** quickly to play or pause media. Both eyes have to close, so a wink does not count. A long eye close does not count either. Blinks come from the face model's own blink scores, which are reliable. The timing is in `config.py` under `BLINK_` and `DOUBLE_BLINK_SECONDS`.
-- **Gaze (experimental):** a rough readout of where you are looking: left, right, up or center. It is only shown on screen and never used to click or move anything, because a webcam cannot tell exactly where on the screen you are looking. `GAZE_THRESHOLD` sets how far you have to look before it changes from center.
+- **Blink twice** quickly to play or pause media. Both eyes have to close, so a wink does not count. A long eye close does not count either. The timing is in `config.py` under `BLINK_` and `DOUBLE_BLINK_SECONDS`.
+- **Gaze (experimental):** a rough readout of where you are looking: left, right, up or center. It is only shown on screen and never used to click or move anything, because a webcam cannot tell exactly where on the screen you are looking.
 
 The face model needs its own model file (see Running it).
 
-## Performance
-
-The main loop never waits for the models.
-
-- **Detection runs in the background.** MediaPipe runs in LIVE_STREAM mode (`tracking.py`). The loop hands over the newest frame and carries on straight away, and picks up the newest result whenever one is ready. If the model is still busy, frames are simply not sent, so nothing queues up.
-- **The cursor is predicted between detections.** Each detection updates a position and a speed (`CursorPredictor` in `cursor.py`). The loop moves the cursor on every pass using where the hand should be by now, so it glides even when detection runs slower than the camera. `CURSOR_ALPHA`, `CURSOR_BETA` and `CURSOR_MAX_AHEAD` in `config.py` tune it.
-- **GPU if there is one.** With `USE_GPU = True` the app tries the GPU first and falls back to the CPU. The window shows which one is in use. The pip build of MediaPipe for Windows has no GPU support, so it uses the CPU there.
-- **Small input for the model.** The camera runs at 640x480 and the models get a 320 pixel wide copy (`DETECTION_WIDTH`). The window still shows the full frame.
-- **Light drawing.** The hand is shown as a dot on each fingertip and a ring where the cursor follows, not a full skeleton.
-- **The camera is read on its own thread** (`camera.py`), so the loop always has the newest frame.
-
-The top right of the window shows the video frame rate and, under it, the detection rate and whether it runs on the CPU or GPU.
-
-Measured on my Windows laptop with a fake 30 fps camera:
-
-| | Video shown | Cursor updates | Longest pause |
-| --- | --- | --- | --- |
-| New loop, real hand model | 30 fps | about 640 a second | 3 ms (after startup) |
-| New loop, slow machine (60 ms per detection) | 30 fps | about 640 a second | 4 ms |
-| Old loop, slow machine (60 ms per detection) | 17 fps | 17 a second | 61 ms |
-
 ## How it works
 
-1. A background thread grabs frames from the webcam. The main loop takes the newest one and mirrors it so the window behaves like a mirror.
-2. MediaPipe finds the hand in the background and returns 21 landmarks (wrist, knuckles, joints and fingertips). The gesture logic below runs once per new detection, and the cursor moves on every pass of the loop.
-3. `gestures.py` turns those landmarks into a gesture name with simple rules:
+1. A background thread grabs frames from the webcam. The main loop takes the newest one, mirrors it so the window behaves like a mirror, and hands it to the hand model in the background.
+2. MediaPipe returns 21 landmarks (wrist, knuckles, joints and fingertips). The gesture logic runs once per new detection. The cursor and scrolling move on every pass of the loop.
+3. `gestures.py` turns the landmarks into a hand shape with simple rules:
    - A finger is **up** when its tip is farther from the wrist than its middle joint. Using distances instead of y values means it still works with a tilted hand.
-   - The thumb is **out** when its tip is far from the index knuckle. Whether it points **up** or **down** depends on the thumb tip's position relative to its base.
-   - A **pinch** is when the thumb tip and index tip are close together. `PinchTracker` decides between a quick pinch (click on release) and a held pinch.
+   - A **pinch** is when the thumb tip and index tip are close together.
    - All distances are compared to the hand's size (wrist to middle knuckle), so the rules work whether your hand is close to the camera or far away.
-   - A **swipe** is the peace sign moving more than a quarter of the frame width in under half a second.
-4. `debounce.py` smooths the result. `GestureStabilizer` waits for the same gesture over several frames, and `TriggerGate` lets one action fire until you reset with a fist.
-5. `actions.py` sends the action with pyautogui, using the shortcut for the current OS from `shortcuts.py`. `cursor.py` maps your hand to screen pixels and smooths the movement.
-6. In sign mode, `asl_letters.py` reads the letter and `speller.py` builds the word.
-7. With eye tracking on, `eyes.py` runs the face model on the unmirrored frame (so "left" means your left), counts blinks and estimates the gaze.
-
-The label at the top shows what the camera sees on each frame. Actions use the stabilized gesture, so the label never freezes while you move between poses.
+4. `debounce.py` waits for the same shape over a few detections, so flicker between poses is ignored.
+5. `controller.py` decides what the hand is doing: moving the pointer, using the menu, or running a tool. `menu.py` works out which wedge you point at from the angle between the menu's middle and your hand.
+6. `actions.py` sends the mouse and keyboard events with pyautogui, using the shortcut for the current OS from `shortcuts.py`.
+7. `overlay.py` and `icons.py` draw the window.
 
 ### Files
 
 ```
-main.py          main loop, window, keys and app state
-camera.py        reads the webcam on its own thread
+main.py          main loop, keys, and what the window shows
+controller.py    pointer, menu and tools
+menu.py          radial menu and the open palm hold
+gestures.py      hand shape rules and flick detection
+debounce.py      ignores flicker between poses
 tracking.py      runs the hand and face models in the background
-gestures.py      gesture rules, swipe and pinch tracking
-debounce.py      stabilizer and fire-once gate
+camera.py        reads the webcam on its own thread
 cursor.py        hand to screen mapping and cursor prediction
-actions.py       mouse and keyboard actions
+actions.py       mouse, keyboard, scrolling and held keys
 shortcuts.py     detects the OS and picks its shortcuts
 mac_keys.py      media keys on Mac
 permissions.py   startup permission checks
+overlay.py       drawing the window
+icons.py         the menu icons
+instructions.py  plain words for the help panel and intro
 asl_letters.py   sign language letter rules
 speller.py       builds a word from signed letters
-eyes.py          face model, blink detection and gaze
-instructions.py  plain-word names for the help panel
-overlay.py       drawing the window
+eyes.py          blink detection and gaze
 fps.py           frames per second counter
-config.py        gesture mappings, shortcuts and tuning values
+config.py        menu, shortcuts and tuning values
 tests/           unit tests with sample landmark data
 ```
 
@@ -186,7 +191,7 @@ python -m pytest
 
 The tests use sample landmark data and stub out pyautogui, so they never move your mouse and they pass the same way on Windows and Mac.
 
-If a gesture is too touchy or not touchy enough, tune `PINCH_RATIO`, `THUMB_EXTENDED_RATIO`, `SWIPE_DISTANCE`, `STABLE_FRAMES` and `PINCH_HOLD_SECONDS` in `config.py`.
+If something is too touchy or not touchy enough, these are the values in `config.py` to try first: `PINCH_RATIO`, `STABLE_FRAMES`, `MENU_HOLD_SECONDS`, `SCROLL_SPEED`, `VOLUME_STEP` and `FLICK_DISTANCE`.
 
 ## Permissions
 
@@ -223,9 +228,11 @@ After changing any of these, quit the terminal completely (Cmd+Q) and open it ag
 
 When the app starts, it checks for Accessibility permission. If it is missing, it prints these steps in the terminal, and the window keeps working as a camera view, but CONTROL ON stays disabled until you fix it.
 
+The Show Desktop key on a Mac is F11 by default. If you changed it, update `show_desktop` in the `mac` section of `SHORTCUTS`.
+
 ### Testing live on a Mac
 
-The Mac has a built in camera, so it is the easiest place to test the gestures live. The rules were tuned with sample landmark data, so expect to adjust `PINCH_RATIO`, `THUMB_EXTENDED_RATIO`, `SWIPE_DISTANCE`, `STABLE_FRAMES`, the `ASL_` values and the `BLINK_` values in `config.py` on the first real run.
+The Mac has a built in camera, so it is the easiest place to test live. The rules were tuned with sample landmark data, so expect to adjust the values listed above on the first real run.
 
 ## What I learned
 

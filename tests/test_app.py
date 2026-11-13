@@ -156,3 +156,19 @@ def test_missing_face_model_turns_eyes_off(monkeypatch):
     assert main.open_face_tracker(app) is None
     assert app.eyes_on is False
     assert "face model" in app.message.lower()
+
+
+def test_click_shows_a_ripple_but_no_label():
+    from controller import Feedback
+    app = make_app()
+    app.show_feedback(Feedback("click", "Click", (0.5, 0.5)), 1.0)
+    assert len(app.ripples) == 1
+    assert app.toast is None
+
+
+def test_screenshot_flashes_and_says_so():
+    from controller import Feedback
+    app = make_app()
+    app.show_feedback(Feedback("flash", "Screenshot", (0.5, 0.5)), 1.0)
+    assert app.flash_at == 1.0
+    assert app.toast == "Screenshot"

@@ -286,3 +286,91 @@ def draw_eye_status(frame, eye_status, gaze):
     color = GREY if eye_status == "no face" else WHITE
     draw_text(frame, f"Eyes: {eye_status}", (left + 12, top + 22), color, 0.55)
     draw_text(frame, f"Gaze (experimental): {gaze or '-'}", (left + 12, top + 46), AMBER, 0.5)
+
+
+# Feedback effects
+
+RIPPLE_SECONDS = 0.5
+FLASH_SECONDS = 0.35
+
+
+def draw_ripples(frame, ripples, now):
+    """Rings that grow and fade where something just happened."""
+    for position, started, color in ripples:
+        age = (now - started) / RIPPLE_SECONDS
+        if 0 <= age < 1:
+            radius = int(12 + 60 * age)
+            thickness = max(1, int(6 * (1 - age)))
+            cv2.circle(frame, view_to_pixel(position, frame), radius, color, thickness, LINE)
+
+
+def draw_flash(frame, started, now):
+    """A white flash over the window that fades out, like a camera."""
+    age = (now - started) / FLASH_SECONDS
+    if 0 <= age < 1:
+        white = np.full_like(frame, 255)
+        cv2.addWeighted(white, 0.8 * (1 - age), frame, 1 - 0.8 * (1 - age), 0, dst=frame)
+
+
+# Tools
+
+def draw_start_target(frame, anchor):
+    """Where to bring your hand before scroll or volume starts."""
+    x, y = view_to_pixel(anchor, frame)
+    cv2.circle(frame, (x, y), 30, ACCENT, 3, LINE)
+    cv2.circle(frame, (x, y), 5, ACCENT, -1, LINE)
+    draw_centered(frame, "bring your hand here", x, y + 54, WHITE, 0.55, 1)
+
+
+def draw_track(frame, x, top, bottom):
+    cv2.line(frame, (x, top), (x, bottom), GREY, 2, LINE)
+
+
+def draw_scroll_tool(frame, anchor, hand, speed, dead_zone):
+    """A track through the start point, with an arrow showing which way and how fast."""
+    if anchor is None:
+        return
+    ax, ay = view_to_pixel(anchor, frame)
+    height = frame.shape[0]
+    reach = int(0.3 * height)
+    draw_track(frame, ax, ay - reach, ay + reach)
+    zone = int(dead_zone * height)
+    cv2.rectangle(frame, (ax - 14, ay - zone), (ax + 14, ay + zone), GREY, 1, LINE)
+    if hand is None:
+        return
+    hy = view_to_pixel(hand, frame)[1]
+    color = ACCENT if speed else GREY
+    cv2.arrowedLine(frame, (ax, ay), (ax, hy), color, 5, LINE, tipLength=0.25)
+    label = "hold still" if not speed else ("scrolling up" if speed > 0 else "scrolling down")
+    draw_text(frame, label, (ax + 24, hy + 6), color, 0.6, 2)
+
+
+def draw_volume_tool(frame, anchor, hand, steps, step_size):
+    """A slider with a tick for each volume step and a knob at the hand."""
+    if anchor is None:
+        return
+    ax, ay = view_to_pixel(anchor, frame)
+    height = frame.shape[0]
+    x = min(ax + 90, frame.shape[1] - 40)
+    reach = int(0.3 * height)
+    draw_track(frame, x, ay - reach, ay + reach)
+    tick = step_size * height
+    for index in range(-int(reach / tick), int(reach / tick) + 1):
+        y = int(ay - index * tick)
+        cv2.line(frame, (x - 8, y), (x + 8, y), GREY, 1, LINE)
+    knob_y = int(ay - steps * tick)
+    cv2.line(frame, (x, ay), (x, knob_y), ACCENT, 6, LINE)
+    cv2.circle(frame, (x, knob_y), 12, ACCENT, -1, LINE)
+    icons.draw(frame, "volume", (x - 44, knob_y), 26, WHITE)
+    draw_text(frame, f"{steps:+d}", (x + 22, knob_y + 8), WHITE, 0.8, 2)
+
+
+def draw_switch_tool(frame, last_flick, now):
+    """Big arrows at the sides. The one you just flicked lights up."""
+    height, width = frame.shape[:2]
+    middle = height // 2
+    lit = last_flick[0] if last_flick and now - last_flick[1] < 0.4 else None
+    for direction, x, step in (("swipe_left", 40, -1), ("swipe_right", width - 40, 1)):
+        color = ACCENT if lit == direction else GREY
+        tip = (x + step * 18, middle)
+        cv2.arrowedLine(frame, (x - step * 18, middle), tip, color, 8 if color == ACCENT else 4, LINE, tipLength=0.6)

@@ -18,7 +18,18 @@ MENU_ITEMS = [
 MENU_HOLD_SECONDS = 0.5  # how long to hold an open palm to open the menu
 MENU_RADIUS = 0.33  # size of the menu, as a fraction of the window height
 MENU_DEAD_ZONE = 0.08  # the middle of the menu, where nothing is picked
-MENU_CLOSE_SECONDS = 1.5  # the menu closes if your hand is gone this long
+MENU_CLOSE_SECONDS = 1.5  # the menu and tools close if your hand is gone this long
+
+# Tools from the menu. Distances are fractions of the window height.
+# Scroll: move your hand above or below where it started. Further means faster.
+SCROLL_DEAD_ZONE = 0.04  # this close to the start does nothing
+SCROLL_SPEED = 50  # wheel notches per second, per unit of distance
+# Volume: one volume key press for every VOLUME_STEP your hand moves.
+VOLUME_STEP = 0.05
+# Switch app: a flick is the hand moving FLICK_DISTANCE sideways within FLICK_SECONDS.
+FLICK_DISTANCE = 0.12
+FLICK_SECONDS = 0.3
+FLICK_COOLDOWN = 0.3  # ignore the hand coming back after a flick
 
 # The keys each action presses on each operating system. The app checks which
 # OS it is running on at startup and uses that section. Key names are
@@ -27,6 +38,7 @@ SHORTCUTS = {
     "windows": {
         "close_window": ["ctrl", "w"],
         "show_desktop": ["win", "d"],
+        "app_switcher": ["alt"],  # held down while you flick, then Tab moves along
         "screenshot": ["win", "printscreen"],  # saved to Pictures > Screenshots
         "play_pause": ["playpause"],
         "volume_up": ["volumeup"],
@@ -34,6 +46,7 @@ SHORTCUTS = {
     },
     "mac": {
         "close_window": ["command", "w"],
+        "app_switcher": ["command"],
         # F11 is the Mac's default Show Desktop key (System Settings >
         # Desktop & Dock > Shortcuts).
         "show_desktop": ["f11"],
