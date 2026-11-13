@@ -4,6 +4,7 @@ import time
 
 import cv2
 import mediapipe as mp
+import pyautogui
 from mediapipe.tasks.python import BaseOptions
 from mediapipe.tasks.python.vision import HandLandmarker, HandLandmarkerOptions, RunningMode
 
@@ -48,21 +49,57 @@ def resize_for_window(frame):
     return cv2.resize(frame, (config.WINDOW_WIDTH, new_height))
 
 
-def status_lines(control_on, armed, last_action):
+def status_lines(control_on, armed, last_action, message):
     if not control_on:
-        return [("CONTROL OFF", overlay.RED)]
-    lines = [("CONTROL ON", overlay.GREEN)]
-    if armed:
-        lines.append(("ready", overlay.GREEN))
+        lines = [("CONTROL OFF", overlay.RED)]
     else:
-        lines.append(("make a fist to arm", overlay.GREY))
-    if last_action:
-        lines.append((f"last: {last_action}", overlay.WHITE))
+        lines = [("CONTROL ON", overlay.GREEN)]
+        lines.append(("ready", overlay.GREEN) if armed else ("make a fist to arm", overlay.GREY))
+        if last_action:
+            lines.append((f"last: {last_action}", overlay.WHITE))
+    if message:
+        lines.append((message, overlay.RED))
     return lines
 
 
 def window_closed():
     return cv2.getWindowProperty(config.WINDOW_NAME, cv2.WND_PROP_VISIBLE) < 1
+
+
+class GestureController:
+    """Decides what to do each frame based on the current gesture."""
+
+    def __init__(self):
+        self.stabilizer = GestureStabilizer(config.STABLE_FRAMES)
+        self.gate = TriggerGate(one_shot_gestures(), config.RESET_GESTURES)
+        self.swipes = gestures.SwipeDetector()
+        self.last_action = None
+
+    def read_gesture(self, landmarks):
+        """Return (stable gesture, event). The event can be a swipe."""
+        raw = gestures.classify(landmarks)
+        gesture = self.stabilizer.update(raw) or gestures.NO_HAND
+
+        # Swipes are tracked on the raw pose so a fast move is not lost to smoothing.
+        if raw == gestures.TWO_FINGERS:
+            swipe = self.swipes.update(gestures.two_finger_x(landmarks), time.monotonic())
+            if swipe:
+                return gesture, swipe
+        else:
+            self.swipes.reset()
+        return gesture, gesture
+
+    def act(self, gesture, event, landmarks):
+        action = config.GESTURE_ACTIONS.get(gesture)
+        if action in actions.CONTINUOUS_ACTIONS and landmarks:
+            actions.run(action, landmarks)
+        else:
+            actions.stop_cursor()
+
+        if self.gate.update(event):
+            action = config.GESTURE_ACTIONS[event]
+            actions.run(action)
+            self.last_action = action
 
 
 def main():
@@ -72,14 +109,13 @@ def main():
         return
 
     landmarker = create_landmarker()
-    stabilizer = GestureStabilizer(config.STABLE_FRAMES)
-    gate = TriggerGate(one_shot_gestures(), config.RESET_GESTURES)
+    controller = GestureController()
 
     cv2.namedWindow(config.WINDOW_NAME)
     cv2.setWindowProperty(config.WINDOW_NAME, cv2.WND_PROP_TOPMOST, 1)
     start = time.monotonic()
     control_on = False  # always start safe
-    last_action = None
+    message = ""
 
     while True:
         ok, frame = camera.read()
@@ -89,17 +125,20 @@ def main():
 
         timestamp_ms = int((time.monotonic() - start) * 1000)
         landmarks = find_hand(landmarker, frame, timestamp_ms)
-        gesture = stabilizer.update(gestures.classify(landmarks)) or gestures.NO_HAND
+        gesture, event = controller.read_gesture(landmarks)
 
-        if control_on and gate.update(gesture):
-            action = config.GESTURE_ACTIONS[gesture]
-            actions.run(action)
-            last_action = action
+        if control_on:
+            try:
+                controller.act(gesture, event, landmarks)
+            except pyautogui.FailSafeException:
+                control_on = False
+                message = "failsafe hit, control turned off"
 
         frame = resize_for_window(frame)
         if landmarks:
             overlay.draw_hand(frame, landmarks)
-        overlay.draw_status(frame, gesture, status_lines(control_on, gate.armed, last_action))
+        lines = status_lines(control_on, controller.gate.armed, controller.last_action, message)
+        overlay.draw_status(frame, event, lines)
         overlay.draw_help(frame, "space: control on/off   q: quit")
         cv2.imshow(config.WINDOW_NAME, frame)
 
@@ -108,7 +147,9 @@ def main():
             break
         if key == ord(" "):
             control_on = not control_on
-            gate.disarm()  # never fire straight away after switching on
+            controller.gate.disarm()  # never fire straight away after switching on
+            actions.stop_cursor()
+            message = ""
 
     camera.release()
     landmarker.close()

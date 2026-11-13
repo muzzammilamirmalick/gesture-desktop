@@ -4,13 +4,13 @@
 # Set a value to None to switch a gesture off.
 GESTURE_ACTIONS = {
     "pinch": "click",
-    "point": None,
-    "swipe_right": None,
-    "swipe_left": None,
-    "open_palm": None,
-    "thumbs_up": None,
-    "thumbs_down": None,
-    "fist": None,
+    "point": "move_cursor",
+    "swipe_right": "next_window",
+    "swipe_left": "previous_window",
+    "open_palm": "play_pause",
+    "thumbs_up": "volume_up",
+    "thumbs_down": "volume_down",
+    "fist": None,  # neutral resting pose
 }
 
 # Gestures that re-arm the trigger after an action has fired.

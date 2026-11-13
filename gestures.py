@@ -105,6 +105,11 @@ def classify(landmarks):
     return UNKNOWN
 
 
+def two_finger_x(landmarks):
+    """Horizontal position between the index and middle fingertips."""
+    return (landmarks[INDEX_TIP][0] + landmarks[MIDDLE_TIP][0]) / 2
+
+
 class SwipeDetector:
     """Spots a fast sideways move of the hand while two fingers are up."""
 
