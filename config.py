@@ -1,37 +1,43 @@
 """All the settings you might want to tweak live here."""
 
-# Which gesture triggers which action. Action names are defined in actions.py.
-# Set a value to None to switch a gesture off.
-GESTURE_ACTIONS = {
-    "point": "move_cursor",
-    "pinch": "click",  # quick pinch, fires when you let go
-    "pinch_hold": "close_window",  # keep pinching for PINCH_HOLD_SECONDS
-    "swipe_right": "next_window",
-    "swipe_left": "previous_window",
-    "open_palm": "play_pause",
-    "thumbs_up": "volume_up",
-    "thumbs_down": "volume_down",
-    "fist": None,  # neutral resting pose
-}
+# Outside the menu there are only two gestures:
+#   point with your index finger to move the mouse
+#   pinch (thumb and index together) to click
+# Everything else lives in the radial menu. Hold an open palm to open it.
+
+# The menu, clockwise from the top. Reorder or remove items here.
+MENU_ITEMS = [
+    "scroll",
+    "volume",
+    "switch_app",
+    "screenshot",
+    "play_pause",
+    "close_window",
+    "show_desktop",
+]
+MENU_HOLD_SECONDS = 0.5  # how long to hold an open palm to open the menu
+MENU_RADIUS = 0.33  # size of the menu, as a fraction of the window height
+MENU_DEAD_ZONE = 0.08  # the middle of the menu, where nothing is picked
+MENU_CLOSE_SECONDS = 1.5  # the menu closes if your hand is gone this long
 
 # The keys each action presses on each operating system. The app checks which
 # OS it is running on at startup and uses that section. Key names are
-# pyautogui key names. "minimize" is available for any gesture you want to map.
+# pyautogui key names.
 SHORTCUTS = {
     "windows": {
         "close_window": ["ctrl", "w"],
-        "next_window": ["alt", "tab"],
-        "previous_window": ["shift", "alt", "tab"],
-        "minimize": ["win", "down"],
+        "show_desktop": ["win", "d"],
+        "screenshot": ["win", "printscreen"],  # saved to Pictures > Screenshots
         "play_pause": ["playpause"],
         "volume_up": ["volumeup"],
         "volume_down": ["volumedown"],
     },
     "mac": {
         "close_window": ["command", "w"],
-        "next_window": ["command", "tab"],
-        "previous_window": ["shift", "command", "tab"],
-        "minimize": ["command", "m"],
+        # F11 is the Mac's default Show Desktop key (System Settings >
+        # Desktop & Dock > Shortcuts).
+        "show_desktop": ["f11"],
+        "screenshot": ["command", "shift", "3"],  # saved to the Desktop
         # pyautogui's media keys do nothing on Mac, so these send the real
         # media key events instead (see mac_keys.py).
         "play_pause": ["mac_play_pause"],
@@ -39,16 +45,6 @@ SHORTCUTS = {
         "volume_down": ["mac_volume_down"],
     },
 }
-
-# Gestures that re-arm the trigger after an action has fired.
-RESET_GESTURES = {"fist"}
-
-# Extra poses that re-arm one action. Going back to pointing after a click
-# lets you click again without making a fist in between.
-REARM_GESTURES = {"pinch": {"point"}}
-
-# How long a pinch must be held to count as pinch and hold.
-PINCH_HOLD_SECONDS = 1.0
 
 # Webcam. 640x480 is plenty for hand tracking and keeps everything fast.
 CAMERA_INDEX = 0
@@ -67,12 +63,8 @@ MODEL_PATH = "models/hand_landmarker.task"
 PINCH_RATIO = 0.25
 THUMB_EXTENDED_RATIO = 0.55
 
-# Swipe: how far (fraction of frame width) and how fast (seconds) the hand must move.
-SWIPE_DISTANCE = 0.25
-SWIPE_MAX_SECONDS = 0.5
-
-# Debounce: a gesture must be seen this many frames in a row to count.
-STABLE_FRAMES = 4
+# Debounce: a gesture must be seen this many detections in a row to count.
+STABLE_FRAMES = 3
 
 # Cursor: ignore this much of each frame edge so you can reach screen corners.
 CURSOR_MARGIN = 0.2

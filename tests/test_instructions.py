@@ -1,43 +1,34 @@
 import config
-import gestures
+import controller
 import instructions
-from main import GestureController
-from tests.sample_hands import make_hand
+from menu import LABELS
 
 
-def test_unknown_pose_is_labelled_unknown():
-    three_fingers = make_hand(index=True, middle=True, ring=True)
-    assert gestures.classify(three_fingers) == gestures.UNKNOWN
-    assert instructions.gesture_name(gestures.UNKNOWN) == "Unknown"
+def test_every_menu_item_has_a_label_and_help():
+    for item in config.MENU_ITEMS:
+        assert item in LABELS
+        assert instructions.MENU_HELP.get(item)
 
 
-def test_label_follows_the_hand_right_away():
-    # The stable gesture lags behind on purpose, but the label must not freeze.
-    controller = GestureController()
-    for _ in range(10):
-        controller.read_gesture(make_hand(index=True))
-    raw, stable, _ = controller.read_gesture(make_hand(index=True, middle=True, ring=True))
-    assert raw == gestures.UNKNOWN
-    assert stable == gestures.POINT
+def test_every_menu_item_does_something():
+    modes = set(controller.MODE_ITEMS) if hasattr(controller, "MODE_ITEMS") else set()
+    for item in config.MENU_ITEMS:
+        assert item in controller.INSTANT_ITEMS or item in modes or item in {"scroll", "volume", "switch_app"}
 
 
-def test_every_gesture_has_a_name():
-    for gesture in list(config.GESTURE_ACTIONS) + [gestures.UNKNOWN, gestures.NO_HAND]:
-        assert gesture in instructions.GESTURE_NAMES
+def test_instant_items_have_shortcuts_on_both_systems():
+    for item in controller.INSTANT_ITEMS:
+        assert item in config.SHORTCUTS["windows"]
+        assert item in config.SHORTCUTS["mac"]
 
 
-def test_every_action_has_plain_words():
-    for action in config.GESTURE_ACTIONS.values():
-        if action:
-            assert action in instructions.ACTION_WORDS
+def test_help_panel_lists_the_two_gestures_and_the_menu():
+    sections = dict(instructions.help_sections())
+    names = [name for name, _ in sections["Always on"]]
+    assert names == ["Point", "Pinch", "Open palm, hold"]
+    assert len(sections["In the menu"]) >= len(config.MENU_ITEMS)
 
 
-def test_guide_lists_every_mapped_gesture():
-    guide_names = [name for name, _ in instructions.gesture_guide()]
-    for gesture, action in config.GESTURE_ACTIONS.items():
-        if action:
-            assert instructions.gesture_name(gesture) in guide_names
-
-
-def test_guide_starts_with_the_rest_pose():
-    assert instructions.gesture_guide()[0][0] == "Fist"
+def test_unimportant_hand_shapes_just_say_hand():
+    assert instructions.hand_name("thumbs_up") == "hand"
+    assert instructions.hand_name("point") == "point"

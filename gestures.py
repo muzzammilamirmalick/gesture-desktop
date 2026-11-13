@@ -33,7 +33,6 @@ UNKNOWN = "unknown"
 NO_HAND = "no_hand"
 SWIPE_RIGHT = "swipe_right"
 SWIPE_LEFT = "swipe_left"
-PINCH_HOLD = "pinch_hold"
 
 
 def distance(a, b):
@@ -106,17 +105,12 @@ def classify(landmarks):
     return UNKNOWN
 
 
-def two_finger_x(landmarks):
-    """Horizontal position between the index and middle fingertips."""
-    return (landmarks[INDEX_TIP][0] + landmarks[MIDDLE_TIP][0]) / 2
-
-
 class SwipeDetector:
-    """Spots a fast sideways move of the hand while two fingers are up."""
+    """Spots a fast sideways move of the hand."""
 
-    def __init__(self, min_distance=None, max_seconds=None):
-        self.min_distance = min_distance or config.SWIPE_DISTANCE
-        self.max_seconds = max_seconds or config.SWIPE_MAX_SECONDS
+    def __init__(self, min_distance, max_seconds):
+        self.min_distance = min_distance
+        self.max_seconds = max_seconds
         self.history = deque()
 
     def reset(self):
@@ -136,41 +130,3 @@ class SwipeDetector:
             self.reset()
             return SWIPE_LEFT
         return None
-
-
-class PinchTracker:
-    """Tells a quick pinch apart from a pinch that is held.
-
-    A quick pinch is reported when you let go, so holding never clicks first.
-    A held pinch is reported once, as soon as it has lasted long enough.
-    """
-
-    def __init__(self, hold_seconds=None):
-        self.hold_seconds = hold_seconds or config.PINCH_HOLD_SECONDS
-        self.started_at = None
-        self.hold_reported = False
-
-    def update(self, gesture, now):
-        """Feed the stable gesture. Returns PINCH, PINCH_HOLD or None."""
-        if gesture == PINCH:
-            return self.while_pinching(now)
-        if self.started_at is None:
-            return None
-        return self.released(gesture)
-
-    def while_pinching(self, now):
-        if self.started_at is None:
-            self.started_at = now
-            self.hold_reported = False
-        if not self.hold_reported and now - self.started_at >= self.hold_seconds:
-            self.hold_reported = True
-            return PINCH_HOLD
-        return None
-
-    def released(self, gesture):
-        was_held = self.hold_reported
-        self.started_at = None
-        # Losing the hand mid pinch is not a click.
-        if was_held or gesture == NO_HAND:
-            return None
-        return PINCH

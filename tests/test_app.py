@@ -6,6 +6,7 @@ from tests.sample_hands import make_hand
 
 def make_app():
     app = main.App(can_control=True)
+    app.show_intro = False
     return app
 
 
@@ -21,9 +22,10 @@ def test_space_toggles_control():
 
 def test_no_permission_keeps_control_off():
     app = main.App(can_control=False)
+    app.show_intro = False
     app.handle_key(ord(" "))
     assert app.control_on is False
-    assert "permission" in app.message
+    assert "permission" in app.message.lower()
 
 
 def test_sign_mode_turns_control_off():
@@ -67,13 +69,37 @@ def test_sign_mode_reads_letters():
     assert app.letter == "Y"
 
 
-def test_help_key_toggles_panel(tmp_path, monkeypatch):
-    monkeypatch.setattr(main, "HELP_SEEN_FILE", tmp_path / ".help_seen")
+def test_help_key_toggles_panel():
     app = make_app()
-    app.show_help = True
+    app.handle_key(ord("h"))
+    assert app.show_help is True
     app.handle_key(ord("h"))
     assert app.show_help is False
-    assert (tmp_path / ".help_seen").exists()
+
+
+def test_any_key_closes_the_intro_and_does_nothing_else(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "INTRO_SEEN_FILE", tmp_path / ".intro_seen")
+    app = main.App(can_control=True)
+    app.show_intro = True
+    app.handle_key(ord(" "))
+    assert app.show_intro is False
+    assert app.control_on is False
+    assert (tmp_path / ".intro_seen").exists()
+
+
+def test_no_key_does_not_close_the_intro():
+    app = main.App(can_control=True)
+    app.show_intro = True
+    app.handle_key(main.NO_KEY)
+    assert app.show_intro is True
+
+
+def test_hud_says_paused_until_control_is_on():
+    app = make_app()
+    assert app.mode_name() == "Paused"
+    assert "space" in app.hint(0.0)
+    app.handle_key(ord(" "))
+    assert app.mode_name() == "Pointer"
 
 
 def eye_scores(closed):
@@ -107,7 +133,7 @@ def test_e_toggles_eyes():
 
 def test_double_blink_plays_or_pauses_when_control_is_on(monkeypatch):
     sent = []
-    monkeypatch.setattr(main.actions, "run", sent.append)
+    monkeypatch.setattr(main.actions, "press_shortcut", sent.append)
     app = make_app()
     app.control_on = True
     double_blink(app, monkeypatch)
@@ -116,11 +142,11 @@ def test_double_blink_plays_or_pauses_when_control_is_on(monkeypatch):
 
 def test_double_blink_does_nothing_when_control_is_off(monkeypatch):
     sent = []
-    monkeypatch.setattr(main.actions, "run", sent.append)
+    monkeypatch.setattr(main.actions, "press_shortcut", sent.append)
     app = make_app()
     double_blink(app, monkeypatch)
     assert sent == []
-    assert "control is off" in app.fired
+    assert "control is off" in app.toast
 
 
 def test_missing_face_model_turns_eyes_off(monkeypatch):
@@ -129,4 +155,4 @@ def test_missing_face_model_turns_eyes_off(monkeypatch):
     app.eyes_on = True
     assert main.open_face_tracker(app) is None
     assert app.eyes_on is False
-    assert "face model" in app.message
+    assert "face model" in app.message.lower()

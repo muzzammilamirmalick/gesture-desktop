@@ -1,57 +1,70 @@
-"""Drawing on top of the webcam frame."""
+"""Drawing the window: the HUD, the radial menu, feedback and help."""
+
+import math
 
 import cv2
 import numpy as np
 
 import asl_letters
-import gestures
+import icons
 import instructions
 
-GREEN = (80, 200, 80)
-RED = (60, 60, 230)
+GREEN = (90, 200, 90)
+RED = (70, 70, 225)
 AMBER = (0, 180, 255)
+ACCENT = (235, 190, 60)  # a bright blue in OpenCV's BGR order
 WHITE = (255, 255, 255)
 GREY = (170, 170, 170)
+INK = (30, 30, 30)
+WEDGE = (55, 50, 45)
 PANEL_COLOR = (40, 34, 30)
 FONT = cv2.FONT_HERSHEY_SIMPLEX
+LINE = cv2.LINE_AA
 
 HEADER_HEIGHT = 84
 PANEL_WIDTH = 340
-ACTION_COLUMN = 180
+HELP_COLUMN = 170
 FINGERTIPS = [4, 8, 12, 16, 20]
 
 
+# Basics
+
 def to_pixel(point, frame):
+    """A normalized (x, y) landmark in window pixels."""
     height, width = frame.shape[:2]
     return int(point[0] * width), int(point[1] * height)
 
 
-def draw_hand(frame, landmarks, cursor_point):
-    """A light marker: a dot on each fingertip and a ring where the cursor follows."""
-    for tip in FINGERTIPS:
-        cv2.circle(frame, to_pixel(landmarks[tip], frame), 4, WHITE, -1, cv2.LINE_AA)
-    cv2.circle(frame, to_pixel(cursor_point, frame), 10, GREEN, 2, cv2.LINE_AA)
+def view_to_pixel(point, frame):
+    """A point in view units (see menu.py) in window pixels."""
+    height = frame.shape[0]
+    return int(point[0] * height), int(point[1] * height)
 
 
 def draw_text(frame, text, position, color=WHITE, size=0.6, thickness=1):
-    cv2.putText(frame, text, position, FONT, size, color, thickness, cv2.LINE_AA)
+    cv2.putText(frame, text, position, FONT, size, color, thickness, LINE)
 
 
 def text_width(text, size, thickness=1):
     return cv2.getTextSize(text, FONT, size, thickness)[0][0]
 
 
-def darken(frame, top, bottom, left=0, right=None):
+def draw_centered(frame, text, center_x, y, color=WHITE, size=0.6, thickness=1):
+    draw_text(frame, text, (int(center_x - text_width(text, size, thickness) / 2), y), color, size, thickness)
+
+
+def darken(frame, top, bottom, left=0, right=None, amount=0.35):
     area = frame[top:bottom, left:right]
-    cv2.convertScaleAbs(area, dst=area, alpha=0.35)
+    cv2.convertScaleAbs(area, dst=area, alpha=amount)
 
 
-def gesture_color(gesture):
-    if gesture == gestures.UNKNOWN:
-        return AMBER
-    if gesture == gestures.NO_HAND:
-        return GREY
-    return WHITE
+# HUD
+
+def draw_hand(frame, landmarks, cursor_point):
+    """A light marker: a dot on each fingertip and a ring where the cursor follows."""
+    for tip in FINGERTIPS:
+        cv2.circle(frame, to_pixel(landmarks[tip], frame), 4, WHITE, -1, LINE)
+    cv2.circle(frame, to_pixel(cursor_point, frame), 10, GREEN, 2, LINE)
 
 
 def fps_color(fps):
@@ -62,58 +75,131 @@ def fps_color(fps):
     return RED
 
 
+def draw_control_state(frame, control_on):
+    """A solid badge, so ON and OFF are obvious from across the room."""
+    text, color = ("CONTROL ON", GREEN) if control_on else ("CONTROL OFF", RED)
+    width = frame.shape[1]
+    text_size = text_width(text, 0.6, 2)
+    left = width - text_size - 34
+    cv2.rectangle(frame, (left, 16), (width - 14, 46), color, -1, LINE)
+    draw_text(frame, text, (left + 10, 39), INK, 0.6, 2)
+
+
 def draw_speed(frame, fps, detection):
-    """Frames per second and the detection rate, top right under the state."""
+    """Frames per second and the detection rate, top right under the badge."""
     width = frame.shape[1]
     fps_text = f"{fps:.0f} fps"
-    draw_text(frame, fps_text, (width - text_width(fps_text, 0.55) - 14, 62), fps_color(fps), 0.55)
+    draw_text(frame, fps_text, (width - text_width(fps_text, 0.5) - 14, 64), fps_color(fps), 0.5)
     if detection:
-        draw_text(frame, detection, (width - text_width(detection, 0.42) - 14, 78), GREY, 0.42)
+        draw_text(frame, detection, (width - text_width(detection, 0.4) - 14, 79), GREY, 0.4)
 
 
-def draw_header(frame, gesture, control_on, fired, fps, detection=""):
-    """Big gesture name, CONTROL ON/OFF, frames per second and the action that just fired."""
-    width = frame.shape[1]
+def draw_header(frame, mode, hand, control_on, fps, detection=""):
+    """Big mode name, the hand shape, CONTROL ON/OFF and speed."""
     darken(frame, 0, HEADER_HEIGHT)
-
-    draw_text(frame, instructions.gesture_name(gesture).upper(), (14, 44), gesture_color(gesture), 1.2, 2)
-
-    state, color = ("CONTROL ON", GREEN) if control_on else ("CONTROL OFF", RED)
-    state_x = width - text_width(state, 0.7, 2) - 14
-    draw_text(frame, state, (state_x, 36), color, 0.7, 2)
-
+    draw_text(frame, mode.upper(), (16, 46), WHITE, 1.2, 2)
+    draw_text(frame, f"hand: {hand}", (18, 72), GREY, 0.5)
+    draw_control_state(frame, control_on)
     draw_speed(frame, fps, detection)
 
-    if fired:
-        draw_text(frame, f"Action: {fired}", (14, 72), GREEN, 0.65, 2)
 
-
-def draw_footer(frame, lines):
-    """Small status lines and key help along the bottom."""
+def draw_hint(frame, hint, keys):
+    """What to do next, in plain words, and the keys underneath."""
     height = frame.shape[0]
-    darken(frame, height - 16 - 24 * len(lines), height)
-    y = height - 12 - 24 * (len(lines) - 1)
-    for text, color in lines:
-        draw_text(frame, text, (14, y), color, 0.5)
-        y += 24
+    darken(frame, height - 62, height)
+    draw_text(frame, hint, (16, height - 34), WHITE, 0.55, 1)
+    draw_text(frame, keys, (16, height - 12), GREY, 0.42)
 
+
+def draw_message(frame, message):
+    height = frame.shape[0]
+    draw_text(frame, message, (16, height - 72), RED, 0.55, 2)
+
+
+# Feedback
+
+def draw_toast(frame, text):
+    """A short label in the middle near the top, like "Screenshot"."""
+    width = frame.shape[1]
+    size = text_width(text, 0.8, 2)
+    left = (width - size) // 2 - 16
+    top = HEADER_HEIGHT + 14
+    cv2.rectangle(frame, (left, top), (left + size + 32, top + 42), INK, -1, LINE)
+    cv2.rectangle(frame, (left, top), (left + size + 32, top + 42), ACCENT, 2, LINE)
+    draw_text(frame, text, (left + 16, top + 30), WHITE, 0.8, 2)
+
+
+def draw_hold_ring(frame, center, progress):
+    """A ring that fills while you hold your palm open."""
+    x, y = view_to_pixel(center, frame)
+    cv2.circle(frame, (x, y), 34, GREY, 2, LINE)
+    cv2.ellipse(frame, (x, y), (34, 34), -90, 0, 360 * progress, ACCENT, 5, LINE)
+
+
+# Radial menu
+
+def draw_wedges(frame, menu, cx, cy, radius):
+    """The filled wedges, blended so the video shows through a little."""
+    left, top = cx - radius, cy - radius
+    area = frame[top:top + 2 * radius, left:left + 2 * radius]
+    layer = area.copy()
+    local = (radius, radius)
+    for index in range(len(menu.items)):
+        start = index * menu.sector - menu.sector / 2 - 90  # OpenCV angles start at 3 o'clock
+        color = ACCENT if index == menu.highlighted else WEDGE
+        cv2.ellipse(layer, local, (radius, radius), 0, start + 1.5, start + menu.sector - 1.5, color, -1, LINE)
+    cv2.addWeighted(layer, 0.85, area, 0.15, 0, dst=area)
+
+
+def draw_menu(frame, menu):
+    cx, cy = view_to_pixel(menu.center, frame)
+    height = frame.shape[0]
+    radius = int(menu.radius * height)
+    inner = int(menu.dead_zone * height)
+
+    draw_wedges(frame, menu, cx, cy, radius)
+    cv2.circle(frame, (cx, cy), inner + 6, INK, -1, LINE)
+    draw_centered(frame, "fist", cx, cy - 2, GREY, 0.4)
+    draw_centered(frame, "to close", cx, cy + 12, GREY, 0.4)
+
+    for index, item in enumerate(menu.items):
+        x, y = view_to_pixel(menu.wedge_position(index, menu.radius * 0.64), frame)
+        color = INK if index == menu.highlighted else WHITE
+        icons.draw(frame, item, (x, y - 10), 26, color)
+        draw_centered(frame, instructions.LABELS[item], x, y + 24, color, 0.42, 1)
+
+
+def draw_pointer_line(frame, menu, pointer):
+    """A thin line from the middle of the menu to the hand, so you can see what you point at."""
+    cx, cy = view_to_pixel(menu.center, frame)
+    px, py = to_pixel(pointer, frame)
+    length = math.hypot(px - cx, py - cy)
+    inner = menu.dead_zone * frame.shape[0] + 6
+    if length <= inner:
+        return
+    # Start at the edge of the middle circle so the line does not cross its text.
+    start = (int(cx + (px - cx) * inner / length), int(cy + (py - cy) * inner / length))
+    cv2.line(frame, start, (px, py), ACCENT, 2, LINE)
+
+
+# Help panel and intro
 
 def help_panel(height, keys):
-    """A side panel listing every gesture and key in plain words."""
+    """A side panel with the two gestures, the menu and the keys, in plain words."""
     panel = np.full((height, PANEL_WIDTH, 3), PANEL_COLOR, dtype=np.uint8)
-    y = 34
-    cv2.putText(panel, "Gestures", (16, y), FONT, 0.75, WHITE, 2, cv2.LINE_AA)
-    y += 30
-    for name, action in instructions.gesture_guide():
-        cv2.putText(panel, name, (16, y), FONT, 0.5, WHITE, 1, cv2.LINE_AA)
-        cv2.putText(panel, action, (ACTION_COLUMN, y), FONT, 0.5, GREY, 1, cv2.LINE_AA)
-        y += 26
-
-    y += 6
-    cv2.putText(panel, "Keys", (16, y), FONT, 0.75, WHITE, 2, cv2.LINE_AA)
-    y += 28
-    for key, meaning in keys:
-        cv2.putText(panel, f"{key}: {meaning}", (16, y), FONT, 0.5, GREY, 1, cv2.LINE_AA)
+    y = 32
+    for heading, rows in instructions.help_sections():
+        draw_text(panel, heading, (16, y), WHITE, 0.7, 2)
+        y += 28
+        for name, meaning in rows:
+            draw_text(panel, name, (16, y), WHITE, 0.48)
+            draw_text(panel, meaning, (HELP_COLUMN, y), GREY, 0.45)
+            y += 24
+        y += 10
+    draw_text(panel, "Keys", (16, y), WHITE, 0.7, 2)
+    y += 26
+    for line in keys:
+        draw_text(panel, line, (16, y), GREY, 0.45)
         y += 22
     return panel
 
@@ -121,6 +207,22 @@ def help_panel(height, keys):
 def attach_panel(frame, panel):
     return np.hstack([frame, panel])
 
+
+def draw_intro(frame):
+    """The first-run screen: the three things to know, then any key to start."""
+    height, width = frame.shape[:2]
+    darken(frame, 0, height, amount=0.2)
+    center = width // 2
+    draw_centered(frame, "Gesture Control", center, 110, WHITE, 1.2, 2)
+    y = 180
+    for number, line in enumerate(instructions.INTRO_LINES, start=1):
+        draw_centered(frame, f"{number}.  {line}", center, y, WHITE, 0.75, 2)
+        y += 46
+    draw_centered(frame, "Control starts off. Press space to turn it on.", center, y + 20, GREY, 0.55)
+    draw_centered(frame, "Press any key to start", center, y + 70, ACCENT, 0.7, 2)
+
+
+# Sign language mode
 
 def draw_sign_header(frame, letter, hand_seen, progress, fps, detection=""):
     """The detected letter, big, with a bar that fills while you hold it."""
@@ -147,7 +249,7 @@ def draw_sign_header(frame, letter, hand_seen, progress, fps, detection=""):
 def draw_word(frame, word):
     """The word so far, in a bar above the footer."""
     height = frame.shape[0]
-    top = height - 86
+    top = height - 108
     darken(frame, top, top + 46)
     draw_text(frame, f"Word: {word}_", (14, top + 32), WHITE, 0.9, 2)
 
@@ -155,23 +257,25 @@ def draw_word(frame, word):
 def sign_help_panel(height, keys):
     panel = np.full((height, PANEL_WIDTH, 3), PANEL_COLOR, dtype=np.uint8)
     lines = [
-        ("Sign language", WHITE, 0.75, 2),
+        ("Sign language", WHITE, 0.7, 2),
         (" ".join(asl_letters.SUPPORTED_LETTERS), WHITE, 0.6, 2),
-        ("Hold a letter still for a second", GREY, 0.5, 1),
-        ("to add it to the word.", GREY, 0.5, 1),
-        ("To repeat a letter, drop it and", GREY, 0.5, 1),
-        ("sign it again.", GREY, 0.5, 1),
-        ("Move your hand away to add a space.", GREY, 0.5, 1),
-        ("Hand control is off in this mode.", AMBER, 0.5, 1),
-        ("", GREY, 0.5, 1),
-        ("Keys", WHITE, 0.75, 2),
-    ] + [(f"{key}: {meaning}", GREY, 0.5, 1) for key, meaning in keys]
-    y = 34
+        ("Hold a letter still for a second", GREY, 0.48, 1),
+        ("to add it to the word.", GREY, 0.48, 1),
+        ("To repeat a letter, drop it and", GREY, 0.48, 1),
+        ("sign it again.", GREY, 0.48, 1),
+        ("Move your hand away to add a space.", GREY, 0.48, 1),
+        ("Hand control is off in this mode.", AMBER, 0.48, 1),
+        ("", GREY, 0.48, 1),
+        ("Keys", WHITE, 0.7, 2),
+    ] + [(line, GREY, 0.45, 1) for line in keys]
+    y = 32
     for text, color, size, thickness in lines:
-        cv2.putText(panel, text, (16, y), FONT, size, color, thickness, cv2.LINE_AA)
-        y += 32 if thickness == 2 else 24
+        draw_text(panel, text, (16, y), color, size, thickness)
+        y += 30 if thickness == 2 else 23
     return panel
 
+
+# Eye tracking
 
 def draw_eye_status(frame, eye_status, gaze):
     """Small box under the header with the eye state and the rough gaze."""

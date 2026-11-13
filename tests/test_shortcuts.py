@@ -32,12 +32,11 @@ def test_every_shortcut_key_is_a_real_key():
 
 
 @pytest.mark.parametrize("action, os_name, expected", [
-    ("next_window", "windows", ("alt", "tab")),
-    ("previous_window", "windows", ("shift", "alt", "tab")),
-    ("minimize", "windows", ("win", "down")),
-    ("next_window", "mac", ("command", "tab")),
-    ("previous_window", "mac", ("shift", "command", "tab")),
-    ("minimize", "mac", ("command", "m")),
+    ("close_window", "windows", ("ctrl", "w")),
+    ("show_desktop", "windows", ("win", "d")),
+    ("screenshot", "windows", ("win", "printscreen")),
+    ("close_window", "mac", ("command", "w")),
+    ("screenshot", "mac", ("command", "shift", "3")),
 ])
 def test_hotkeys_per_os(action, os_name, expected):
     with mock.patch("pyautogui.hotkey") as hotkey:
@@ -68,10 +67,16 @@ def test_mac_media_keys_use_mac_events(action, key):
     press.assert_not_called()
 
 
-def test_run_uses_the_current_os():
+def test_mac_show_desktop_is_f11():
+    with mock.patch("pyautogui.press") as press:
+        actions.press_shortcut("show_desktop", "mac")
+    press.assert_called_once_with("f11")
+
+
+def test_uses_the_current_os_by_default():
     with mock.patch.object(actions, "OS_NAME", "mac"), mock.patch("pyautogui.hotkey") as hotkey:
-        actions.run("next_window")
-    hotkey.assert_called_once_with("command", "tab")
+        actions.press_shortcut("close_window")
+    hotkey.assert_called_once_with("command", "w")
 
 
 def test_windows_needs_no_input_permission():

@@ -10,48 +10,36 @@ import actions
 import asl_letters
 import config
 import eyes
-from camera import Camera
-from fps import FpsCounter
 import gestures
 import instructions
 import overlay
 import permissions
-from debounce import GestureStabilizer, TriggerGate
+from camera import Camera
+from controller import MENU, GestureController
+from debounce import GestureStabilizer
+from fps import FpsCounter
 from speller import Speller
 from tracking import FaceTracker, HandTracker
 
-# Created the first time you hide the help panel, so it only opens by itself once.
-HELP_SEEN_FILE = Path(__file__).parent / ".help_seen"
-FIRED_SHOW_SECONDS = 1.5
+# Created when you close the intro screen, so it only shows on the first run.
+INTRO_SEEN_FILE = Path(__file__).parent / ".intro_seen"
+TOAST_SECONDS = 1.2
+NO_KEY = 255
 
-KEYS = [
-    ("space", "control on or off"),
-    ("s", "sign language mode"),
-    ("e", "eye tracking on or off"),
-    ("h", "show or hide this help"),
-    ("q", "quit"),
+KEY_LINES = [
+    "space: control on or off",
+    "h: help   s: sign language",
+    "e: eye tracking   q: quit",
 ]
-
-SIGN_KEYS = [
-    ("s", "back to hand control"),
-    ("space", "add a space"),
-    ("backspace", "delete a letter"),
-    ("c", "clear the word"),
-    ("e", "eye tracking on or off"),
-    ("h", "show or hide this help"),
-    ("q", "quit"),
+SIGN_KEY_LINES = [
+    "s: back to hand control",
+    "space: add a space   c: clear",
+    "backspace: delete   q: quit",
 ]
+FOOTER_KEYS = "space: control   h: help   s: sign   e: eyes   q: quit"
+SIGN_FOOTER_KEYS = "s: leave   space: space   backspace: delete   c: clear"
 
 BACKSPACE_KEYS = {8, 127}  # Windows sends 8, Mac sends 127
-
-
-def one_shot_gestures():
-    """Gestures whose action should fire once per reset."""
-    return {
-        gesture
-        for gesture, action in config.GESTURE_ACTIONS.items()
-        if action and action not in actions.CONTINUOUS_ACTIONS
-    }
 
 
 def resize_for_window(frame):
@@ -66,59 +54,6 @@ def window_closed():
     return cv2.getWindowProperty(config.WINDOW_NAME, cv2.WND_PROP_VISIBLE) < 1
 
 
-class GestureController:
-    """Decides what to do each frame based on the current gesture."""
-
-    def __init__(self):
-        self.stabilizer = GestureStabilizer(config.STABLE_FRAMES)
-        self.gate = TriggerGate(one_shot_gestures(), config.RESET_GESTURES, config.REARM_GESTURES)
-        self.swipes = gestures.SwipeDetector()
-        self.pinches = gestures.PinchTracker()
-
-    def read_gesture(self, landmarks):
-        """Return (raw gesture, stable gesture, event).
-
-        The event is what the trigger gate sees: a swipe, a finished pinch, a
-        held pinch, or just the stable gesture.
-        """
-        raw = gestures.classify(landmarks)
-        stable = self.stabilizer.update(raw) or gestures.NO_HAND
-        now = time.monotonic()
-
-        swipe = self.read_swipe(raw, landmarks, now)
-        pinch = self.pinches.update(stable, now)
-        if swipe:
-            return raw, stable, swipe
-        if pinch:
-            return raw, stable, pinch
-        if stable == gestures.PINCH:
-            return raw, stable, None  # still deciding between click and hold
-        return raw, stable, stable
-
-    def read_swipe(self, raw, landmarks, now):
-        # Swipes use the raw pose so a fast move is not lost to smoothing.
-        if raw != gestures.TWO_FINGERS:
-            self.swipes.reset()
-            return None
-        return self.swipes.update(gestures.two_finger_x(landmarks), now)
-
-    def act(self, raw, stable, event, landmarks):
-        """Run actions for this frame. Returns the one-shot action that fired, if any."""
-        fired = None
-        if self.gate.update(event):
-            fired = config.GESTURE_ACTIONS[event]
-            actions.run(fired)
-
-        # Only move while both the raw and stable pose agree, so the cursor
-        # freezes as soon as the fingers start closing for a pinch.
-        action = config.GESTURE_ACTIONS.get(stable)
-        if action in actions.CONTINUOUS_ACTIONS and raw == stable and landmarks:
-            actions.run(action, landmarks)
-        else:
-            actions.stop_cursor()
-        return fired
-
-
 class App:
     def __init__(self, can_control):
         self.can_control = can_control
@@ -127,10 +62,11 @@ class App:
         self.sign_mode = False
         self.letter = None
         self.control_on = False  # always start safe
-        self.show_help = not HELP_SEEN_FILE.exists()
+        self.show_intro = not INTRO_SEEN_FILE.exists()
+        self.show_help = False
         self.message = ""
-        self.fired = None
-        self.fired_at = 0.0
+        self.toast = None
+        self.toast_at = 0.0
         self.panels = {}
         self.fps = FpsCounter()
         self.eyes_on = False  # the face model adds load, so it starts off
@@ -141,20 +77,31 @@ class App:
         self.landmarks = None
         self.gesture = gestures.NO_HAND
 
+    def set_aspect(self, width, height):
+        self.controller.aspect = width / height
+
+    # Updates
+
     def update(self, landmarks):
-        """Process one new hand detection. Returns the gesture name to show."""
+        """Process one new hand detection."""
         self.landmarks = landmarks
+        now = time.monotonic()
         if self.sign_mode:
             self.letter = asl_letters.classify_letter(landmarks)
-            self.speller.update(self.letter, landmarks is not None, time.monotonic())
+            self.speller.update(self.letter, landmarks is not None, now)
             self.gesture = gestures.classify(landmarks)
-            return self.gesture
+        elif self.control_on:
+            self.run_controller(landmarks, now)
+        else:
+            self.gesture = gestures.classify(landmarks)
 
-        raw, stable, event = self.controller.read_gesture(landmarks)
-        if self.control_on:
-            self.run_actions(raw, stable, event, landmarks)
-        self.gesture = raw
-        return raw
+    def run_controller(self, landmarks, now):
+        try:
+            self.gesture, _ = self.controller.update(landmarks, now)
+        except pyautogui.FailSafeException:
+            self.failsafe()
+        for item in self.controller.take_feedback():
+            self.show_toast(item.text)
 
     def tick(self, now):
         """Runs on every pass of the main loop, between detections too."""
@@ -163,21 +110,15 @@ class App:
         try:
             actions.follow_cursor(now)
         except pyautogui.FailSafeException:
-            self.control_on = False
-            self.message = "failsafe hit, control turned off"
+            self.failsafe()
 
-    def run_actions(self, raw, stable, event, landmarks):
-        try:
-            fired = self.controller.act(raw, stable, event, landmarks)
-        except pyautogui.FailSafeException:
-            self.control_on = False
-            self.message = "failsafe hit, control turned off"
-            return
-        if fired:
-            self.show_fired(instructions.action_words(fired))
+    def failsafe(self):
+        self.control_on = False
+        self.controller.reset()
+        self.message = "Failsafe hit, control turned off"
 
     def update_eyes(self, scores):
-        """Process one frame of face scores, or None when no face is found."""
+        """Process one result from the face model, or None when no face is found."""
         if scores is None:
             self.blinks.reset()
             self.eye_status = "no face"
@@ -194,70 +135,105 @@ class App:
         if not action:
             return
         if not self.control_on:
-            self.show_fired("double blink seen, control is off")
+            self.show_toast("Double blink seen, control is off")
             return
         try:
-            actions.run(action)
+            actions.press_shortcut(action)
         except pyautogui.FailSafeException:
-            self.control_on = False
-            self.message = "failsafe hit, control turned off"
+            self.failsafe()
             return
-        self.show_fired(f"{instructions.action_words(action)} (double blink)")
+        self.show_toast(instructions.action_words(action).capitalize())
 
-    def show_fired(self, text):
-        self.fired = text
-        self.fired_at = time.monotonic()
+    def show_toast(self, text):
+        self.toast = text
+        self.toast_at = time.monotonic()
 
-    def recent_action(self):
-        if time.monotonic() - self.fired_at < FIRED_SHOW_SECONDS:
-            return self.fired
+    def current_toast(self):
+        if self.toast and time.monotonic() - self.toast_at < TOAST_SECONDS:
+            return self.toast
         return None
 
-    def footer_lines(self):
-        lines = []
-        if self.control_on and not self.controller.gate.armed:
-            lines.append(("make a fist to get ready", overlay.AMBER))
-        if self.message:
-            lines.append((self.message, overlay.RED))
-        if self.sign_mode:
-            lines.append(("s: leave   space: space   backspace: delete   c: clear", overlay.GREY))
-        else:
-            lines.append(("h: help   space: control   s: sign mode   e: eyes   q: quit", overlay.GREY))
-        return lines
+    # What the HUD says
+
+    def mode_name(self):
+        if not self.control_on:
+            return "Paused"
+        return "Menu" if self.controller.mode == MENU else "Pointer"
+
+    def hint(self, now):
+        if not self.can_control:
+            return "Allow input control first, see the terminal"
+        if not self.control_on:
+            return "Press space to turn control on"
+        return self.controller.hint(now)
+
+    # Drawing
 
     def draw(self, frame, detection=""):
         """Draw the window. `detection` is a short line like "detect 30 fps, CPU"."""
         frame = resize_for_window(frame)
-        landmarks = self.landmarks
-        if landmarks:
-            overlay.draw_hand(frame, landmarks, actions.cursor_point(landmarks))
-        fps = self.fps.tick(time.monotonic())
+        now = time.monotonic()
+        fps = self.fps.tick(now)
         if self.sign_mode:
-            progress = self.speller.progress(time.monotonic())
-            overlay.draw_sign_header(frame, self.letter, landmarks is not None, progress, fps, detection)
-            overlay.draw_word(frame, self.speller.word)
+            self.draw_sign_mode(frame, fps, detection, now)
         else:
-            overlay.draw_header(frame, self.gesture, self.control_on, self.recent_action(), fps, detection)
+            self.draw_control_mode(frame, fps, detection, now)
         if self.eyes_on:
             overlay.draw_eye_status(frame, self.eye_status, self.gaze_label)
-        overlay.draw_footer(frame, self.footer_lines())
-        if self.show_help:
+        if self.message:
+            overlay.draw_message(frame, self.message)
+        if self.show_intro:
+            overlay.draw_intro(frame)
+        elif self.show_help:
             frame = overlay.attach_panel(frame, self.help_panel(frame.shape[0]))
         return frame
+
+    def draw_control_mode(self, frame, fps, detection, now):
+        controller = self.controller
+        menu_open = self.control_on and controller.mode == MENU
+        if menu_open:
+            overlay.draw_menu(frame, controller.menu)
+        if self.landmarks:
+            pointer = actions.cursor_point(self.landmarks)
+            if menu_open:
+                overlay.draw_pointer_line(frame, controller.menu, pointer)
+            overlay.draw_hand(frame, self.landmarks, pointer)
+        hold = controller.palm.progress(now)
+        if self.control_on and hold > 0 and controller.palm_center:
+            overlay.draw_hold_ring(frame, controller.palm_center, hold)
+        overlay.draw_header(frame, self.mode_name(), instructions.hand_name(self.gesture), self.control_on, fps, detection)
+        toast = self.current_toast()
+        if toast:
+            overlay.draw_toast(frame, toast)
+        overlay.draw_hint(frame, self.hint(now), FOOTER_KEYS)
+
+    def draw_sign_mode(self, frame, fps, detection, now):
+        if self.landmarks:
+            overlay.draw_hand(frame, self.landmarks, actions.cursor_point(self.landmarks))
+        progress = self.speller.progress(now)
+        overlay.draw_sign_header(frame, self.letter, self.landmarks is not None, progress, fps, detection)
+        overlay.draw_word(frame, self.speller.word)
+        overlay.draw_hint(frame, "Hold a letter still to add it to the word", SIGN_FOOTER_KEYS)
 
     def help_panel(self, height):
         # Each panel never changes while running, so draw it once.
         key = (self.sign_mode, height)
         if key not in self.panels:
             if self.sign_mode:
-                self.panels[key] = overlay.sign_help_panel(height, SIGN_KEYS)
+                self.panels[key] = overlay.sign_help_panel(height, SIGN_KEY_LINES)
             else:
-                self.panels[key] = overlay.help_panel(height, KEYS)
+                self.panels[key] = overlay.help_panel(height, KEY_LINES)
         return self.panels[key]
 
+    # Keys
+
     def handle_key(self, key):
-        if key == ord("h"):
-            self.toggle_help()
+        if key == NO_KEY:
+            return
+        if self.show_intro:
+            self.close_intro()  # any key closes the intro, and does nothing else
+        elif key == ord("h"):
+            self.show_help = not self.show_help
         elif key == ord("s"):
             self.toggle_sign_mode()
         elif key == ord("e"):
@@ -275,10 +251,9 @@ class App:
         elif key == ord(" "):
             self.speller.add(" ")
 
-    def toggle_help(self):
-        self.show_help = not self.show_help
-        if not self.show_help:
-            HELP_SEEN_FILE.touch()
+    def close_intro(self):
+        self.show_intro = False
+        INTRO_SEEN_FILE.touch()
 
     def toggle_eyes(self):
         self.eyes_on = not self.eyes_on
@@ -290,24 +265,22 @@ class App:
         self.sign_mode = not self.sign_mode
         # Hand control is always off while signing, so letters never click anything.
         self.control_on = False
-        self.controller.gate.disarm()
-        actions.stop_cursor()
+        self.controller.reset()
         self.message = ""
 
     def toggle_control(self):
         if not self.can_control:
-            self.message = "no input permission, see terminal"
+            self.message = "No input permission, see the terminal"
             return
         self.control_on = not self.control_on
-        self.controller.gate.disarm()  # never fire straight away after switching on
-        actions.stop_cursor()
+        self.controller.reset()  # nothing fires straight away after switching on
         self.message = ""
 
 
 def open_face_tracker(app):
     if not Path(config.FACE_MODEL_PATH).exists():
         app.eyes_on = False
-        app.message = "face model missing, see README"
+        app.message = "Face model missing, see README"
         return None
     return FaceTracker(config.FACE_MODEL_PATH, config.DETECTION_WIDTH, config.USE_GPU)
 
@@ -334,6 +307,7 @@ def run(camera, hands, app):
         if new_frame:
             shown_frame = frame_number
             frame = cv2.flip(camera_frame, 1)  # mirror view so moving right looks like right
+            app.set_aspect(frame.shape[1], frame.shape[0])
             hands.submit(frame, now)
             if app.eyes_on:
                 face = face or open_face_tracker(app)

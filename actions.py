@@ -89,28 +89,3 @@ def follow_cursor(now):
 
 def stop_cursor():
     cursor.stop()
-
-
-# Fire once per gesture, then wait for the reset pose.
-# Keyboard shortcuts (next_window, play_pause and so on) are set per OS in config.py.
-ONE_SHOT_ACTIONS = {
-    "click": click,
-}
-
-# Run every frame while the gesture is held. These get the hand landmarks.
-CONTINUOUS_ACTIONS = {
-    "move_cursor": move_cursor,
-}
-
-
-def all_action_names():
-    return set(ONE_SHOT_ACTIONS) | set(CONTINUOUS_ACTIONS) | shortcuts.shortcut_actions()
-
-
-def run(name, landmarks=None):
-    if name in CONTINUOUS_ACTIONS:
-        CONTINUOUS_ACTIONS[name](landmarks)
-    elif name in ONE_SHOT_ACTIONS:
-        ONE_SHOT_ACTIONS[name]()
-    else:
-        press_shortcut(name)
