@@ -4,11 +4,14 @@ import pyautogui
 
 import config
 import gestures
+import mac_keys
+import shortcuts
 from cursor import Smoother, map_to_screen
 
 pyautogui.FAILSAFE = True  # push the mouse into a screen corner to stop everything
 pyautogui.PAUSE = 0
 
+OS_NAME = shortcuts.detect_os()
 cursor_smoother = Smoother(config.CURSOR_SMOOTHING)
 
 
@@ -16,24 +19,17 @@ def click():
     pyautogui.click()
 
 
-def next_window():
-    pyautogui.hotkey("alt", "tab")
+def press_keys(keys):
+    if keys[0] in mac_keys.MEDIA_KEYS:
+        mac_keys.press_media_key(keys[0])
+    elif len(keys) == 1:
+        pyautogui.press(keys[0])
+    else:
+        pyautogui.hotkey(*keys)
 
 
-def previous_window():
-    pyautogui.hotkey("alt", "shift", "tab")
-
-
-def play_pause():
-    pyautogui.press("playpause")
-
-
-def volume_up():
-    pyautogui.press("volumeup")
-
-
-def volume_down():
-    pyautogui.press("volumedown")
+def press_shortcut(action, os_name=None):
+    press_keys(shortcuts.shortcut_for(action, os_name or OS_NAME))
 
 
 def move_cursor(landmarks):
@@ -49,13 +45,9 @@ def stop_cursor():
 
 
 # Fire once per gesture, then wait for the reset pose.
+# Keyboard shortcuts (next_window, play_pause and so on) are set per OS in config.py.
 ONE_SHOT_ACTIONS = {
     "click": click,
-    "next_window": next_window,
-    "previous_window": previous_window,
-    "play_pause": play_pause,
-    "volume_up": volume_up,
-    "volume_down": volume_down,
 }
 
 # Run every frame while the gesture is held. These get the hand landmarks.
@@ -64,8 +56,14 @@ CONTINUOUS_ACTIONS = {
 }
 
 
+def all_action_names():
+    return set(ONE_SHOT_ACTIONS) | set(CONTINUOUS_ACTIONS) | shortcuts.shortcut_actions()
+
+
 def run(name, landmarks=None):
     if name in CONTINUOUS_ACTIONS:
         CONTINUOUS_ACTIONS[name](landmarks)
-    else:
+    elif name in ONE_SHOT_ACTIONS:
         ONE_SHOT_ACTIONS[name]()
+    else:
+        press_shortcut(name)

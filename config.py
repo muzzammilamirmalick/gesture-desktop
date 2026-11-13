@@ -13,6 +13,30 @@ GESTURE_ACTIONS = {
     "fist": None,  # neutral resting pose
 }
 
+# The keys each action presses on each operating system. The app checks which
+# OS it is running on at startup and uses that section. Key names are
+# pyautogui key names. "minimize" is available for any gesture you want to map.
+SHORTCUTS = {
+    "windows": {
+        "next_window": ["alt", "tab"],
+        "previous_window": ["shift", "alt", "tab"],
+        "minimize": ["win", "down"],
+        "play_pause": ["playpause"],
+        "volume_up": ["volumeup"],
+        "volume_down": ["volumedown"],
+    },
+    "mac": {
+        "next_window": ["command", "tab"],
+        "previous_window": ["shift", "command", "tab"],
+        "minimize": ["command", "m"],
+        # pyautogui's media keys do nothing on Mac, so these send the real
+        # media key events instead (see mac_keys.py).
+        "play_pause": ["mac_play_pause"],
+        "volume_up": ["mac_volume_up"],
+        "volume_down": ["mac_volume_down"],
+    },
+}
+
 # Gestures that re-arm the trigger after an action has fired.
 RESET_GESTURES = {"fist"}
 

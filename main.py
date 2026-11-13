@@ -12,6 +12,7 @@ import actions
 import config
 import gestures
 import overlay
+import permissions
 from debounce import GestureStabilizer, TriggerGate
 
 
@@ -106,7 +107,12 @@ def main():
     camera = cv2.VideoCapture(config.CAMERA_INDEX)
     if not camera.isOpened():
         print("Could not open the webcam. Check CAMERA_INDEX in config.py.")
+        print(permissions.camera_help())
         return
+
+    can_control = permissions.can_control_input()
+    if not can_control:
+        print(permissions.MAC_PERMISSION_HELP)
 
     landmarker = create_landmarker()
     controller = GestureController()
@@ -145,7 +151,9 @@ def main():
         key = cv2.waitKey(1) & 0xFF
         if key == ord("q") or window_closed():
             break
-        if key == ord(" "):
+        if key == ord(" ") and not can_control:
+            message = "no input permission, see terminal"
+        elif key == ord(" "):
             control_on = not control_on
             controller.gate.disarm()  # never fire straight away after switching on
             actions.stop_cursor()

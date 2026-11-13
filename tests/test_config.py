@@ -8,7 +8,7 @@ KNOWN_GESTURES = {
 
 
 def test_every_mapped_action_exists():
-    known = set(actions.ONE_SHOT_ACTIONS) | set(actions.CONTINUOUS_ACTIONS)
+    known = actions.all_action_names()
     for action in config.GESTURE_ACTIONS.values():
         assert action is None or action in known
 
