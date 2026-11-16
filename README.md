@@ -268,7 +268,7 @@ mkdir models
 curl -L -o models/hand_landmarker.task https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task
 curl -L -o models/vosk.zip https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
 tar -xf models/vosk.zip -C models
-del modelsosk.zip
+del models\vosk.zip
 ```
 
 The Vosk model is only needed for voice commands. Without it everything else works, and pressing v says the model is missing.
