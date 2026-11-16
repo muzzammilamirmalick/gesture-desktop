@@ -4,7 +4,7 @@ Control your computer with your hands in front of your webcam. Point to move the
 
 There is almost nothing to memorize. Two gestures are always on, and the menu shows the rest with icons and labels.
 
-It also has an optional sign language mode that reads static ASL letters and builds a word.
+You can also use offline voice commands like "scroll down" or "next window", and there is an optional sign language mode that reads static ASL letters and builds a word.
 
 This is the desktop half of my gesture project. It runs on Windows and Mac. Everything runs locally. Nothing is sent over the network.
 
@@ -13,6 +13,7 @@ This is the desktop half of my gesture project. It runs on Windows and Mac. Ever
 - Python
 - MediaPipe HandLandmarker for the 21 hand landmarks, in LIVE_STREAM mode
 - OpenCV to read the webcam and draw the window
+- Vosk for offline speech recognition, and sounddevice to read the microphone
 - pyautogui to send mouse and keyboard actions
 - pytest for the tests
 
@@ -62,13 +63,37 @@ The rules are in `fingers.py`. They only use angles and distance ratios, so the 
 
 The app gives these rules MediaPipe's 3D world points (in meters, centred on the hand). In 3D a finger pointing towards the camera still looks straight, which a flat 2D picture cannot tell you.
 
+## Voice commands
+
+Press **v** to turn voice on. It is off by default, so it never takes anything away from hand tracking unless you want it. Speech recognition runs on this computer with [Vosk](https://alphacephei.com/vosk/). Nothing is recorded and nothing goes over the internet.
+
+| Say | What it does |
+| --- | --- |
+| "click" | Click where the mouse is |
+| "scroll up" / "scroll down" | Scroll the window under the mouse |
+| "next window" | Alt+Tab (Cmd+Tab on Mac) |
+| "volume up" / "volume down" | Two volume steps |
+| "play" / "pause" | The play/pause media key. There is only one key for both, so both toggle |
+| "screenshot" | Save a screenshot |
+| "control on" / "control off" | Same as the space key |
+
+Everything except "control on" is ignored while control is off, so talking near your computer never does anything by surprise.
+
+A box under the badge shows whether voice is listening, the last thing it heard, and which action that fired (or why it did not).
+
+The phrases and their actions are in `VOICE_COMMANDS` in `config.py`. Add or change a line there and the app picks it up on the next start. Vosk is given the exact list of phrases, which makes it much more accurate on short commands than general dictation. Anything else comes back as unknown and is ignored.
+
+The microphone is read on its own thread (`voice.py`), and the main loop picks up phrases the same way it picks up hand detections, so it never waits. `voice_commands.py` matches what was heard to a command.
+
+I checked the recognizer with every phrase spoken by Windows text to speech: all 11 were heard correctly, and a phrase that is not a command ("what time is it") was ignored. Each took under 70 ms to process after the speaker stopped.
+
 ## The window
 
 - **Top left:** the current mode in big letters (Paused, Pointer, Menu, Scroll, Volume, Switch app) and the hand shape under it.
 - **Top right:** a solid **CONTROL ON** (green) or **CONTROL OFF** (red) badge, the display frame rate, the webcam rate and the detection rate.
 - **Bottom:** one line telling you what to do next, and the keys.
 - **Feedback:** every action shows a short label, and a ripple where it happened. A click shows a green ripple at your fingertip. Screenshots flash the window.
-- **Help:** press **h** for a side panel with the two gestures, every menu item and the keys.
+- **Help:** press **h** for a help screen over the video with the gestures, every menu item, the voice commands and the keys.
 
 ## Keys
 
@@ -77,6 +102,7 @@ The app gives these rules MediaPipe's 3D world points (in meters, centred on the
 | space | Control on or off (in sign mode, adds a space to the word) |
 | h | Show or hide the help panel |
 | s | Sign language mode on or off |
+| v | Voice commands on or off |
 | backspace | Delete a letter (sign mode) |
 | c | Clear the word (sign mode) |
 | q | Quit |
@@ -105,6 +131,7 @@ The window redraws at **60 fps**. The webcam and the hand model each run at thei
 - **High resolution camera, small copy for the model.** The app asks the webcam for 1280x720 at 60 fps (in MJPG, which most webcams need for that). The window shows it at 960 wide (`WINDOW_WIDTH`) and the model gets a 480 wide copy (`DETECTION_WIDTH`).
 - **Light drawing.** The hand is a thin skeleton drawn in one call plus a dot on each fingertip. The help panel is drawn once and reused.
 - **The camera is read on its own thread** (`camera.py`), so the loop always has the newest frame.
+- **Voice stays off until you want it.** The Vosk model only loads the first time you press v, and the microphone is read on its own thread.
 - **1 ms timer on Windows.** Windows normally sleeps in 15 ms steps, which made each pass of the loop take 15 ms and the window miss frames. The app asks for 1 ms steps while it runs.
 
 The top right of the window shows the real numbers: the display rate, what the webcam really sends, and how fast detection is running (and on CPU or GPU).
@@ -165,6 +192,8 @@ overlay.py       drawing the window
 icons.py         the menu icons
 instructions.py  plain words for the help panel and intro
 asl_letters.py   sign language letter rules
+voice.py         listens to the microphone with Vosk, offline
+voice_commands.py  matches what was heard to a command
 speller.py       builds a word from signed letters
 fps.py           frames per second counter
 config.py        menu, shortcuts and tuning values
@@ -181,12 +210,17 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-Download the MediaPipe hand model once into `models/`.
+Download the MediaPipe hand model and the small Vosk English model (about 40 MB) once into `models/`. Both stay out of git.
 
 ```
 mkdir models
 curl -L -o models/hand_landmarker.task https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task
+curl -L -o models/vosk.zip https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
+tar -xf models/vosk.zip -C models
+del modelsosk.zip
 ```
+
+The Vosk model is only needed for voice commands. Without it everything else works, and pressing v says the model is missing.
 
 Then run:
 
@@ -208,7 +242,7 @@ If something is too touchy or not touchy enough, these are the values in `config
 
 The app needs access to your camera and permission to control the mouse and keyboard.
 
-- **Windows:** turn on Settings > Privacy & security > Camera > "Let desktop apps access your camera". Nothing else is needed.
+- **Windows:** turn on Settings > Privacy & security > Camera > "Let desktop apps access your camera". For voice, do the same under Microphone. Nothing else is needed.
 - **Mac:** see below.
 
 ## Running on Mac
@@ -221,6 +255,8 @@ source .venv/bin/activate
 pip install -r requirements.txt
 mkdir models
 curl -L -o models/hand_landmarker.task https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task
+curl -L -o models/vosk.zip https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
+unzip models/vosk.zip -d models && rm models/vosk.zip
 python main.py
 ```
 
@@ -231,8 +267,9 @@ pip also installs pyobjc, which pyautogui uses on Mac.
 macOS gives these permissions to the app you run Python from (Terminal, iTerm or VS Code), not to the script. Open **System Settings > Privacy & Security** and turn that app on under:
 
 1. **Camera**, so it can see your hand. macOS usually asks the first time you run it.
-2. **Accessibility**, so it can move the mouse, click and press keys. Without this, pyautogui does nothing and does not show an error.
-3. **Input Monitoring**, which some macOS versions also want for sending keys.
+2. **Microphone**, only for voice commands. macOS asks the first time you press v.
+3. **Accessibility**, so it can move the mouse, click and press keys. Without this, pyautogui does nothing and does not show an error.
+4. **Input Monitoring**, which some macOS versions also want for sending keys.
 
 After changing any of these, quit the terminal completely (Cmd+Q) and open it again.
 

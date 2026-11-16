@@ -86,3 +86,20 @@ def test_windows_needs_no_input_permission():
 def test_camera_help_mentions_the_right_settings():
     assert "Privacy & Security" in permissions.camera_help("Darwin")
     assert "desktop apps" in permissions.camera_help("Windows")
+
+
+def test_named_actions_send_the_right_input():
+    sent = []
+    with mock.patch.object(actions, "OS_NAME", "windows"), \
+         mock.patch("pyautogui.click", lambda: sent.append("click")), \
+         mock.patch("pyautogui.scroll", lambda amount: sent.append(f"scroll {amount}")), \
+         mock.patch("pyautogui.press", sent.append), \
+         mock.patch("pyautogui.hotkey", lambda *keys: sent.append("+".join(keys))):
+        actions.scroller.reset()
+        for action in ["click", "scroll_up", "scroll_down", "volume_up", "next_window", "play"]:
+            actions.run(action)
+    notches = config.SCROLL_NOTCHES * 120
+    assert sent == [
+        "click", f"scroll {notches}", f"scroll {-notches}",
+        "volumeup", "volumeup", "alt+tab", "playpause",
+    ]

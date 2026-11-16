@@ -17,13 +17,11 @@ WHITE = (255, 255, 255)
 GREY = (170, 170, 170)
 INK = (30, 30, 30)
 WEDGE = (55, 50, 45)
-PANEL_COLOR = (40, 34, 30)
 FONT = cv2.FONT_HERSHEY_SIMPLEX
 LINE = cv2.LINE_AA
 
 HEADER_HEIGHT = 84
-PANEL_WIDTH = 340
-HELP_COLUMN = 170
+HELP_NAME_WIDTH = 170  # the gap between a gesture or phrase and what it does
 FINGERTIPS = [4, 8, 12, 16, 20]
 # The hand drawn as five lines from the wrist plus one across the knuckles.
 HAND_LINES = [
@@ -216,28 +214,33 @@ def draw_pointer_line(frame, menu, pointer):
 
 # Help panel and intro
 
-def help_panel(height, keys):
-    """A side panel with the two gestures, the menu and the keys, in plain words."""
-    panel = np.full((height, PANEL_WIDTH, 3), PANEL_COLOR, dtype=np.uint8)
-    y = 32
-    for heading, rows in instructions.help_sections():
-        draw_text(panel, heading, (16, y), WHITE, 0.7, 2)
-        y += 28
-        for name, meaning in rows:
-            draw_text(panel, name, (16, y), WHITE, 0.48)
-            draw_text(panel, meaning, (HELP_COLUMN, y), GREY, 0.45)
-            y += 24
-        y += 10
-    draw_text(panel, "Keys", (16, y), WHITE, 0.7, 2)
-    y += 26
-    for line in keys:
-        draw_text(panel, line, (16, y), GREY, 0.45)
-        y += 22
+def help_panel(size, columns):
+    """The help screen in two columns, drawn once on black and reused.
+
+    `columns` is a list of columns, each a list of (heading, [(name, what it does)]).
+    show_panel() lays it over the video every frame.
+    """
+    height, width = size
+    panel = np.zeros((height, width, 3), np.uint8)
+    for number, sections in enumerate(columns):
+        x = 24 + number * (width // 2)
+        y = 40
+        for heading, rows in sections:
+            draw_text(panel, heading, (x, y), WHITE, 0.65, 2)
+            y += 26
+            for name, meaning in rows:
+                draw_text(panel, name, (x, y), WHITE, 0.48)
+                draw_text(panel, meaning, (x + HELP_NAME_WIDTH, y), GREY, 0.45)
+                y += 22
+            y += 14
+    draw_centered(panel, "Press h to close", width // 2, height - 18, ACCENT, 0.55, 2)
     return panel
 
 
-def attach_panel(frame, panel):
-    return np.hstack([frame, panel])
+def show_panel(frame, panel):
+    """Dim the video and put the help text on top. cv2.max keeps the bright text."""
+    darken(frame, 0, frame.shape[0], amount=0.25)
+    cv2.max(frame, panel, dst=frame)
 
 
 def draw_intro(frame):
@@ -286,25 +289,21 @@ def draw_word(frame, word):
     draw_text(frame, f"Word: {word}_", (14, top + 32), WHITE, 0.9, 2)
 
 
-def sign_help_panel(height, keys):
-    panel = np.full((height, PANEL_WIDTH, 3), PANEL_COLOR, dtype=np.uint8)
-    lines = [
-        ("Sign language", WHITE, 0.7, 2),
-        (" ".join(asl_letters.SUPPORTED_LETTERS), WHITE, 0.6, 2),
-        ("Hold a letter still for a second", GREY, 0.48, 1),
-        ("to add it to the word.", GREY, 0.48, 1),
-        ("To repeat a letter, drop it and", GREY, 0.48, 1),
-        ("sign it again.", GREY, 0.48, 1),
-        ("Move your hand away to add a space.", GREY, 0.48, 1),
-        ("Hand control is off in this mode.", AMBER, 0.48, 1),
-        ("", GREY, 0.48, 1),
-        ("Keys", WHITE, 0.7, 2),
-    ] + [(line, GREY, 0.45, 1) for line in keys]
-    y = 32
-    for text, color, size, thickness in lines:
-        draw_text(panel, text, (16, y), color, size, thickness)
-        y += 30 if thickness == 2 else 23
-    return panel
+# Voice
+
+def draw_voice(frame, status, heard, did):
+    """A box under the header: is it listening, what it heard, and what that did."""
+    width = frame.shape[1]
+    left = width - 330
+    top = HEADER_HEIGHT
+    darken(frame, top, top + 64, left, width)
+    color = GREEN if status == "listening" else AMBER
+    draw_text(frame, f"Voice: {status}", (left + 12, top + 24), color, 0.55, 2)
+    if heard:
+        draw_text(frame, f'Heard "{heard}"', (left + 12, top + 44), WHITE, 0.5)
+        draw_text(frame, f"-> {did}", (left + 12, top + 60), GREY, 0.45)
+    elif status == "listening":
+        draw_text(frame, "Say a command, press h for the list", (left + 12, top + 46), GREY, 0.45)
 
 
 # Feedback effects

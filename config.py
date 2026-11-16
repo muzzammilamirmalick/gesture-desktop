@@ -43,6 +43,10 @@ SHORTCUTS = {
         "play_pause": ["playpause"],
         "volume_up": ["volumeup"],
         "volume_down": ["volumedown"],
+        "next_window": ["alt", "tab"],
+        # Media keys only toggle, so play and pause both press play/pause.
+        "play": ["playpause"],
+        "pause": ["playpause"],
     },
     "mac": {
         "close_window": ["command", "w"],
@@ -56,8 +60,33 @@ SHORTCUTS = {
         "play_pause": ["mac_play_pause"],
         "volume_up": ["mac_volume_up"],
         "volume_down": ["mac_volume_down"],
+        "next_window": ["command", "tab"],
+        "play": ["mac_play_pause"],
+        "pause": ["mac_play_pause"],
     },
 }
+
+# Voice commands (press v). What you say on the left, the action on the right.
+# Actions are the names in SHORTCUTS above, plus "click", "scroll_up",
+# "scroll_down", "control_on" and "control_off". Everything except
+# "control on" is ignored while control is off.
+VOICE_COMMANDS = {
+    "click": "click",
+    "scroll up": "scroll_up",
+    "scroll down": "scroll_down",
+    "next window": "next_window",
+    "volume up": "volume_up",
+    "volume down": "volume_down",
+    "play": "play",
+    "pause": "pause",
+    "screenshot": "screenshot",
+    "control on": "control_on",
+    "control off": "control_off",
+}
+# The offline speech model. Download it once, see the README.
+VOSK_MODEL_PATH = "models/vosk-model-small-en-us-0.15"
+SCROLL_NOTCHES = 5  # how far one "scroll up" or "scroll down" goes
+VOLUME_PRESSES = 2  # volume key presses for one "volume up" or "volume down"
 
 # Webcam. The app asks for 1280x720 at 60 fps. Many webcams only give 30 fps,
 # the window shows the real number.

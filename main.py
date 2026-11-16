@@ -16,31 +16,38 @@ import gestures
 import instructions
 import overlay
 import permissions
+import voice_commands
 from camera import Camera
-from debounce import GestureStabilizer
 from controller import MENU, SCROLL, SWITCH, VOLUME, GestureController, scroll_speed, volume_steps
+from debounce import GestureStabilizer
 from fps import FpsCounter
 from motion import HandMotion
 from speller import Speller
 from tracking import LEFT, RIGHT, HandTracker
+from voice import FAILED, VoiceListener
 
 # Created when you close the intro screen, so it only shows on the first run.
 INTRO_SEEN_FILE = Path(__file__).parent / ".intro_seen"
 TOAST_SECONDS = 1.2
+HEARD_SECONDS = 4.0  # how long "Heard ..." stays on screen
 RIPPLE_COLORS = {"click": overlay.GREEN, "pick": overlay.ACCENT, "flash": overlay.ACCENT}
 NO_KEY = 255
 
-KEY_LINES = [
-    "space: control on or off",
-    "h: help   s: sign language",
-    "q: quit",
+KEY_ROWS = [
+    ("space", "control on or off"),
+    ("v", "voice on or off"),
+    ("s", "sign language"),
+    ("h", "help"),
+    ("q", "quit"),
 ]
-SIGN_KEY_LINES = [
-    "s: back to hand control",
-    "space: add a space   c: clear",
-    "backspace: delete   q: quit",
+SIGN_KEY_ROWS = [
+    ("s", "back to hand control"),
+    ("space", "add a space"),
+    ("backspace", "delete a letter"),
+    ("c", "clear the word"),
+    ("q", "quit"),
 ]
-FOOTER_KEYS = "space: control   h: help   s: sign   q: quit"
+FOOTER_KEYS = "space: control   h: help   s: sign   v: voice   q: quit"
 SIGN_FOOTER_KEYS = "s: leave   space: space   backspace: delete   c: clear"
 
 BACKSPACE_KEYS = {8, 127}  # Windows sends 8, Mac sends 127
@@ -98,6 +105,9 @@ class App:
         self.counters = {side: GestureStabilizer(config.STABLE_FRAMES) for side in SIDE_COLORS}
         self.finger_counts = {}  # side -> fingers held up, for the hands in view
         self.gesture = gestures.NO_HAND
+        self.voice = None  # created the first time voice is turned on
+        self.voice_on = False  # off by default, so it never costs anything unless you want it
+        self.heard = None  # (what was heard, what it did, when), for the screen
 
     def set_aspect(self, width, height):
         self.controller.aspect = width / height
@@ -169,6 +179,64 @@ class App:
         except pyautogui.FailSafeException:
             self.failsafe()
 
+    # Named actions, from voice now and from gestures later
+
+    def run_action(self, action):
+        """Run an action by name. Returns a few words on what happened, for the screen."""
+        if action == "control_on":
+            if not self.control_on:
+                self.toggle_control()
+            return "control on" if self.control_on else "no input permission"
+        if action == "control_off":
+            if self.control_on:
+                self.toggle_control()
+            return "control off"
+        if not self.control_on:
+            return "ignored, control is off"
+        try:
+            actions.run(action)
+        except pyautogui.FailSafeException:
+            self.failsafe()
+            return "failsafe hit"
+        words = instructions.action_words(action)
+        self.show_toast(words.capitalize())
+        return words
+
+    # Voice
+
+    def toggle_voice(self):
+        if self.voice_on:
+            self.voice.stop()
+            self.voice_on = False
+            return
+        if not Path(config.VOSK_MODEL_PATH).exists():
+            self.message = "Voice model missing, see README"
+            return
+        if self.voice is None:
+            self.voice = VoiceListener(config.VOSK_MODEL_PATH, config.VOICE_COMMANDS)
+        self.voice.start()
+        self.voice_on = True
+        self.message = ""
+
+    def check_voice(self, now):
+        """Runs on every pass of the main loop. Picks up anything the microphone heard."""
+        if not self.voice_on:
+            return
+        if self.voice.status == FAILED:
+            self.voice_on = False
+            self.message = f"Voice stopped: {self.voice.error}"[:70]
+            return
+        for text in self.voice.take_heard():
+            self.on_heard(text, now)
+
+    def on_heard(self, text, now):
+        found = voice_commands.find_command(text, config.VOICE_COMMANDS)
+        if found is None:
+            self.heard = (voice_commands.clean(text) or "?", "not a command", now)
+            return
+        phrase, action = found
+        self.heard = (phrase, self.run_action(action), now)
+
     def failsafe(self):
         self.control_on = False
         self.controller.reset()
@@ -213,7 +281,7 @@ class App:
         if self.show_intro:
             overlay.draw_intro(frame)
         elif self.show_help:
-            frame = overlay.attach_panel(frame, self.help_panel(frame.shape[0]))
+            overlay.show_panel(frame, self.help_panel(frame.shape[:2]))
         return frame
 
     def draw_control_mode(self, frame, fps, detection, now):
@@ -231,11 +299,20 @@ class App:
         if self.control_on:
             self.draw_tool(frame, now)
         self.draw_effects(frame, now)
+        self.draw_voice(frame, now)
         overlay.draw_header(frame, self.mode_name(), instructions.hand_name(self.gesture), self.control_on, fps, detection)
         toast = self.current_toast()
         if toast:
             overlay.draw_toast(frame, toast)
         overlay.draw_hint(frame, self.hint(now), FOOTER_KEYS)
+
+    def draw_voice(self, frame, now):
+        if not self.voice_on:
+            return
+        heard, did = None, None
+        if self.heard and now - self.heard[2] < HEARD_SECONDS:
+            heard, did = self.heard[0], self.heard[1]
+        overlay.draw_voice(frame, self.voice.status, heard, did)
 
     def draw_hands(self, frame, now, with_cursor=True):
         """Both hands, each in its own color with its side written under it."""
@@ -280,14 +357,15 @@ class App:
         overlay.draw_word(frame, self.speller.word)
         overlay.draw_hint(frame, "Hold a letter still to add it to the word", SIGN_FOOTER_KEYS)
 
-    def help_panel(self, height):
+    def help_panel(self, size):
         # Each panel never changes while running, so draw it once.
-        key = (self.sign_mode, height)
+        key = (self.sign_mode, size)
         if key not in self.panels:
             if self.sign_mode:
-                self.panels[key] = overlay.sign_help_panel(height, SIGN_KEY_LINES)
+                columns = instructions.sign_help_columns(SIGN_KEY_ROWS)
             else:
-                self.panels[key] = overlay.help_panel(height, KEY_LINES)
+                columns = instructions.help_columns(KEY_ROWS)
+            self.panels[key] = overlay.help_panel(size, columns)
         return self.panels[key]
 
     # Keys
@@ -301,6 +379,8 @@ class App:
             self.show_help = not self.show_help
         elif key == ord("s"):
             self.toggle_sign_mode()
+        elif key == ord("v"):
+            self.toggle_voice()
         elif self.sign_mode:
             self.handle_sign_key(key)
         elif key == ord(" "):
@@ -373,6 +453,7 @@ def run(camera, hands, app):
 
         # The cursor moves on every pass, using the predicted position.
         app.tick(now)
+        app.check_voice(now)
 
         if view is not None and now >= next_draw:
             next_draw = max(next_draw + draw_every, now)
@@ -407,6 +488,8 @@ def main():
         run(camera, hands, app)
     finally:
         precise_timer(False)
+        if app.voice:
+            app.voice.stop()
         actions.release_held_keys()  # never leave Alt or Cmd stuck down
         camera.release()
         hands.close()

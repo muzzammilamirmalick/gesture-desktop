@@ -135,3 +135,28 @@ def hold_shortcut(action, os_name=None):
 def release_held_keys():
     while held_keys:
         pyautogui.keyUp(held_keys.pop())
+
+
+# Actions that are not a plain shortcut.
+SPECIAL_ACTIONS = {"click", "scroll_up", "scroll_down"}
+REPEATED_ACTIONS = {"volume_up", "volume_down"}
+
+
+def run(action):
+    """Run a named action from config: a click, a scroll, or a keyboard shortcut."""
+    if action == "click":
+        click()
+    elif action == "scroll_up":
+        scroller.scroll(config.SCROLL_NOTCHES)
+    elif action == "scroll_down":
+        scroller.scroll(-config.SCROLL_NOTCHES)
+    elif action in REPEATED_ACTIONS:
+        for _ in range(config.VOLUME_PRESSES):
+            press_shortcut(action)
+    else:
+        press_shortcut(action)
+
+
+def known_actions():
+    """Every action name that run() understands."""
+    return SPECIAL_ACTIONS | shortcuts.shortcut_actions()
