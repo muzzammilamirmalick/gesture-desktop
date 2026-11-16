@@ -6,3 +6,5 @@ models/*.task
 models/vosk-model-*/
 models/*.zip
 my_gestures.json
+build/
+dist/

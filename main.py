@@ -2,8 +2,8 @@
 
 import ctypes
 import platform
+import sys
 import time
-from pathlib import Path
 
 import cv2
 import pyautogui
@@ -31,7 +31,7 @@ from speller import Speller
 from tracking import LEFT, RIGHT, HandTracker
 import training
 from training import TrainingSession
-from voice import FAILED, VoiceListener
+from voice import FAILED, PhraseRecognizer, VoiceListener
 
 # Created when you close the intro screen, so it only shows on the first run.
 INTRO_SEEN_FILE = paths.user_file(".intro_seen")
@@ -288,12 +288,13 @@ class App:
             self.voice.stop()
             self.voice_on = False
             return
-        if not Path(config.VOSK_MODEL_PATH).exists():
+        model = paths.resource(config.VOSK_MODEL_PATH)
+        if not model.exists():
             self.message = "Voice model missing, see README"
             return
         if self.voice is None:
             phrases = profiles.all_phrases(config.PROFILES, config.VOICE_COMMANDS)
-            self.voice = VoiceListener(config.VOSK_MODEL_PATH, phrases)
+            self.voice = VoiceListener(model, phrases)
         self.voice.start()
         self.voice_on = True
         self.message = ""
@@ -342,7 +343,7 @@ class App:
 
     def hint(self, now):
         if not self.can_control:
-            return "Allow input control first, see the terminal"
+            return "Allow Accessibility in System Settings, then restart"
         if not self.control_on:
             return "Press space to turn control on"
         return self.controller.hint(now)
@@ -547,7 +548,7 @@ class App:
 
     def toggle_control(self):
         if not self.can_control:
-            self.message = "No input permission, see the terminal"
+            self.message = "No input permission, see the README"
             return
         self.control_on = not self.control_on
         self.controller.reset()  # nothing fires straight away after switching on
@@ -606,18 +607,31 @@ def run(camera, hands, app):
         app.handle_key(key)
 
 
+def show_problem(lines):
+    """Print a problem and show it in a window too, since the packaged app has no terminal."""
+    for line in lines:
+        print(line)
+    cv2.imshow(config.WINDOW_NAME, overlay.problem_screen(lines))
+    while cv2.waitKey(100) == -1 and not window_closed():
+        pass
+    cv2.destroyAllWindows()
+
+
 def main():
     camera = Camera(config.CAMERA_INDEX, config.CAMERA_WIDTH, config.CAMERA_HEIGHT, config.CAMERA_FPS)
     if not camera.is_open():
-        print("Could not open the webcam. Check CAMERA_INDEX in config.py.")
-        print(permissions.camera_help())
+        show_problem(["Could not open the webcam.", permissions.camera_help(), "Check CAMERA_INDEX in config.py if you have more than one."])
+        return
+    model = paths.resource(config.MODEL_PATH)
+    if not model.exists():
+        show_problem(["The hand model is missing.", f"Download it to {model}, see the README."])
         return
 
     can_control = permissions.can_control_input()
     if not can_control:
         print(permissions.MAC_PERMISSION_HELP)
 
-    hands = HandTracker(config.MODEL_PATH, config.DETECTION_WIDTH, config.USE_GPU)
+    hands = HandTracker(str(model), config.DETECTION_WIDTH, config.USE_GPU)
     print(f"Hand detection is running on the {hands.delegate_name}.")
     app = App(can_control)
 
@@ -637,5 +651,25 @@ def main():
         cv2.destroyAllWindows()
 
 
+def check_install():
+    """Load both models without a camera. Used to test a fresh install or a build:
+    python main.py --check (or GestureControl.exe --check). Exit code 0 means OK."""
+    problems = []
+    try:
+        HandTracker(str(paths.resource(config.MODEL_PATH)), config.DETECTION_WIDTH, config.USE_GPU).close()
+    except Exception as error:
+        problems.append(f"hand model: {error}")
+    try:
+        PhraseRecognizer(paths.resource(config.VOSK_MODEL_PATH), config.VOICE_COMMANDS)
+    except Exception as error:
+        problems.append(f"voice model: {error}")
+    for problem in problems:
+        print(problem)
+    print("OK" if not problems else f"{len(problems)} problem(s)")
+    return len(problems)
+
+
 if __name__ == "__main__":
+    if "--check" in sys.argv:
+        sys.exit(check_install())
     main()

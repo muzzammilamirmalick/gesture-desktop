@@ -246,6 +246,18 @@ def show_panel(frame, panel):
     cv2.max(frame, panel, dst=frame)
 
 
+def problem_screen(lines):
+    """A plain window explaining why the app cannot start."""
+    screen = np.full((220, 760, 3), 30, np.uint8)
+    draw_text(screen, lines[0], (24, 50), RED, 0.8, 2)
+    y = 92
+    for line in lines[1:]:
+        draw_text(screen, line, (24, y), WHITE, 0.5)
+        y += 30
+    draw_text(screen, "Press any key to close", (24, 200), GREY, 0.45)
+    return screen
+
+
 def draw_intro(frame):
     """The first-run screen: the three things to know, then any key to start."""
     height, width = frame.shape[:2]

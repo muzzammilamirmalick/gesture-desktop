@@ -219,6 +219,7 @@ The letter rules are in `asl_letters.py`. Each finger is sorted into straight, b
 
 ```
 main.py          main loop, keys, and what the window shows
+gesture_control.spec  the PyInstaller build
 controller.py    pointer, menu and tools
 menu.py          radial menu and the open palm hold
 gestures.py      hand shape rules and flick detection
@@ -278,6 +279,14 @@ Then run:
 python main.py
 ```
 
+Check that both models load, without needing a camera:
+
+```
+python main.py --check
+```
+
+It prints OK and exits with code 0 when everything is in place.
+
 Run the tests:
 
 ```
@@ -287,6 +296,47 @@ python -m pytest
 The tests use sample landmark data and stub out pyautogui, so they never move your mouse and they pass the same way on Windows and Mac.
 
 If something is too touchy or not touchy enough, these are the values in `config.py` to try first: `PINCH_RATIO`, `STABLE_FRAMES`, `MENU_HOLD_SECONDS`, `SCROLL_SPEED`, `VOLUME_STEP` and `FLICK_DISTANCE`.
+
+## Building a double-click app
+
+PyInstaller packs Python, the libraries and both models into one app, so it runs on a computer without Python. Download the models first (see Running it), then:
+
+```
+pip install -r requirements-build.txt
+pyinstaller gesture_control.spec
+```
+
+- **Windows:** `dist\GestureControl.exe`, a single file. Double-click it.
+- **Mac:** `dist/Gesture Control.app`. Drag it into Applications.
+
+Build on the system you want the app for. PyInstaller cannot build a Mac app on Windows or the other way round. The output in `build/` and `dist/` stays out of git.
+
+To check a build without a camera, run `GestureControl.exe --check` (or `"dist/Gesture Control.app/Contents/MacOS/GestureControl" --check` on a Mac). On my Windows laptop the exe is about 180 MB, takes about a minute and a half to build, and the check passes with both models loading from inside the exe.
+
+Things to know about the packaged app:
+
+- `config.py` is built into the app. Change settings before you build, or run it with Python to tweak them.
+- Your saved gestures and the intro flag go into your user account instead of the project folder: `%APPDATA%\Gesture Control` on Windows and `~/Library/Application Support/Gesture Control` on a Mac.
+- The Windows exe unpacks itself to a temp folder each time it starts, so it takes a few seconds to open.
+- There is no terminal, so if the webcam or the hand model is missing, the app says so in a small window.
+
+### Permissions for the packaged app
+
+**Windows**
+
+- The app is not signed, so the first time Windows SmartScreen says "Windows protected your PC". Click **More info**, then **Run anyway**. Some antivirus programs are wary of PyInstaller exes too.
+- Settings > Privacy & security > **Camera**: turn on "Let desktop apps access your camera".
+- Settings > Privacy & security > **Microphone**: turn on "Let desktop apps access your microphone", only needed for voice.
+- Nothing extra is needed to move the mouse or press keys. Windows does not let an app control windows that run as administrator, unless the app also runs as administrator.
+
+**Mac**
+
+The permissions now belong to **Gesture Control** itself, not to Terminal.
+
+- The app is not signed, so the first time right-click it, choose **Open**, then **Open** again. After that it opens normally.
+- **Camera** and **Microphone**: macOS asks the first time. The app explains why in the prompt.
+- **Accessibility** (to move the mouse, click and press keys) and **Input Monitoring**: open System Settings > Privacy & Security, click +, and add Gesture Control from Applications. Then quit the app and open it again.
+- If you build a new version, macOS may treat it as a new app. Remove the old entry in Accessibility and add it again.
 
 ## Permissions
 
