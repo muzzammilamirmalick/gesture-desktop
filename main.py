@@ -9,17 +9,15 @@ import pyautogui
 import actions
 import asl_letters
 import config
-import eyes
 import gestures
 import instructions
 import overlay
 import permissions
 from camera import Camera
 from controller import MENU, SCROLL, SWITCH, VOLUME, GestureController, scroll_speed, volume_steps
-from debounce import GestureStabilizer
 from fps import FpsCounter
 from speller import Speller
-from tracking import FaceTracker, HandTracker
+from tracking import HandTracker
 
 # Created when you close the intro screen, so it only shows on the first run.
 INTRO_SEEN_FILE = Path(__file__).parent / ".intro_seen"
@@ -30,14 +28,14 @@ NO_KEY = 255
 KEY_LINES = [
     "space: control on or off",
     "h: help   s: sign language",
-    "e: eye tracking   q: quit",
+    "q: quit",
 ]
 SIGN_KEY_LINES = [
     "s: back to hand control",
     "space: add a space   c: clear",
     "backspace: delete   q: quit",
 ]
-FOOTER_KEYS = "space: control   h: help   s: sign   e: eyes   q: quit"
+FOOTER_KEYS = "space: control   h: help   s: sign   q: quit"
 SIGN_FOOTER_KEYS = "s: leave   space: space   backspace: delete   c: clear"
 
 BACKSPACE_KEYS = {8, 127}  # Windows sends 8, Mac sends 127
@@ -72,11 +70,6 @@ class App:
         self.flash_at = None
         self.panels = {}
         self.fps = FpsCounter()
-        self.eyes_on = False  # the face model adds load, so it starts off
-        self.blinks = eyes.BlinkDetector()
-        self.gaze = GestureStabilizer(config.GAZE_STABLE_FRAMES)
-        self.eye_status = "no face"
-        self.gaze_label = None
         self.landmarks = None
         self.gesture = gestures.NO_HAND
 
@@ -130,33 +123,6 @@ class App:
         self.controller.reset()
         self.message = "Failsafe hit, control turned off"
 
-    def update_eyes(self, scores):
-        """Process one result from the face model, or None when no face is found."""
-        if scores is None:
-            self.blinks.reset()
-            self.eye_status = "no face"
-            self.gaze_label = None
-            return
-        event = self.blinks.update(eyes.eyes_closed_score(scores), time.monotonic())
-        self.eye_status = "closed" if self.blinks.eyes_closed() else "open"
-        self.gaze_label = self.gaze.update(eyes.gaze_direction(scores))
-        if event == eyes.DOUBLE_BLINK:
-            self.on_double_blink()
-
-    def on_double_blink(self):
-        action = config.EYE_ACTIONS.get(eyes.DOUBLE_BLINK)
-        if not action:
-            return
-        if not self.control_on:
-            self.show_toast("Double blink seen, control is off")
-            return
-        try:
-            actions.press_shortcut(action)
-        except pyautogui.FailSafeException:
-            self.failsafe()
-            return
-        self.show_toast(instructions.action_words(action).capitalize())
-
     def show_toast(self, text):
         self.toast = text
         self.toast_at = time.monotonic()
@@ -191,8 +157,6 @@ class App:
             self.draw_sign_mode(frame, fps, detection, now)
         else:
             self.draw_control_mode(frame, fps, detection, now)
-        if self.eyes_on:
-            overlay.draw_eye_status(frame, self.eye_status, self.gaze_label)
         if self.message:
             overlay.draw_message(frame, self.message)
         if self.show_intro:
@@ -270,8 +234,6 @@ class App:
             self.show_help = not self.show_help
         elif key == ord("s"):
             self.toggle_sign_mode()
-        elif key == ord("e"):
-            self.toggle_eyes()
         elif self.sign_mode:
             self.handle_sign_key(key)
         elif key == ord(" "):
@@ -289,12 +251,6 @@ class App:
         self.show_intro = False
         INTRO_SEEN_FILE.touch()
 
-    def toggle_eyes(self):
-        self.eyes_on = not self.eyes_on
-        self.blinks.reset()
-        self.eye_status = "no face"
-        self.gaze_label = None
-
     def toggle_sign_mode(self):
         self.sign_mode = not self.sign_mode
         # Hand control is always off while signing, so letters never click anything.
@@ -311,24 +267,14 @@ class App:
         self.message = ""
 
 
-def open_face_tracker(app):
-    if not Path(config.FACE_MODEL_PATH).exists():
-        app.eyes_on = False
-        app.message = "Face model missing, see README"
-        return None
-    return FaceTracker(config.FACE_MODEL_PATH, config.DETECTION_WIDTH, config.USE_GPU)
-
-
 def detection_line(hands):
     return f"detect {hands.detect_fps:.0f} fps, {hands.delegate_name}"
 
 
 def run(camera, hands, app):
-    """The main loop. It never waits for the models, so video and cursor stay smooth."""
-    face = None  # loaded the first time eye tracking is turned on
+    """The main loop. It never waits for the model, so video and cursor stay smooth."""
     shown_frame = 0
     seen_hand = 0
-    seen_face = 0
 
     while True:
         now = time.monotonic()
@@ -343,23 +289,12 @@ def run(camera, hands, app):
             frame = cv2.flip(camera_frame, 1)  # mirror view so moving right looks like right
             app.set_aspect(frame.shape[1], frame.shape[0])
             hands.submit(frame, now)
-            if app.eyes_on:
-                face = face or open_face_tracker(app)
-                if face:
-                    # The face model gets the unmirrored frame so "left" means your left.
-                    face.submit(camera_frame, now)
 
         # Gesture logic runs once per new detection, not once per loop.
         result_number, landmarks = hands.latest()
         if result_number != seen_hand:
             seen_hand = result_number
             app.update(landmarks)
-
-        if face and app.eyes_on:
-            result_number, scores = face.latest()
-            if result_number != seen_face:
-                seen_face = result_number
-                app.update_eyes(scores)
 
         # The cursor moves on every pass, using the predicted position.
         app.tick(now)
@@ -371,9 +306,6 @@ def run(camera, hands, app):
         if key == ord("q") or window_closed():
             break
         app.handle_key(key)
-
-    if face:
-        face.close()
 
 
 def main():

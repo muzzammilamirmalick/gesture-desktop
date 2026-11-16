@@ -4,7 +4,7 @@ Control your computer with one hand in front of your webcam. Point to move the m
 
 There is almost nothing to memorize. Two gestures are always on, and the menu shows the rest with icons and labels.
 
-It also has two optional extras: a sign language mode that reads static ASL letters and builds a word, and eye tracking where blinking twice plays or pauses media.
+It also has an optional sign language mode that reads static ASL letters and builds a word.
 
 This is the desktop half of my gesture project. It runs on Windows and Mac. Everything runs locally. Nothing is sent over the network.
 
@@ -12,7 +12,6 @@ This is the desktop half of my gesture project. It runs on Windows and Mac. Ever
 
 - Python
 - MediaPipe HandLandmarker for the 21 hand landmarks, in LIVE_STREAM mode
-- MediaPipe FaceLandmarker for blinks and gaze (optional)
 - OpenCV to read the webcam and draw the window
 - pyautogui to send mouse and keyboard actions
 - pytest for the tests
@@ -59,7 +58,6 @@ On Mac, pyautogui's play/pause and volume keys do nothing, so `mac_keys.py` send
 | space | Control on or off (in sign mode, adds a space to the word) |
 | h | Show or hide the help panel |
 | s | Sign language mode on or off |
-| e | Eye tracking on or off |
 | backspace | Delete a letter (sign mode) |
 | c | Clear the word (sign mode) |
 | q | Quit |
@@ -75,21 +73,20 @@ Keys only work while the gesture window has focus.
 - The app switcher holds Alt (or Cmd) down while you flick. It always lets go again: when you pinch, make a fist, take your hand away, turn control off, or quit.
 - The menu and the tools close by themselves if your hand is out of view for a second and a half.
 - Sign mode always turns control off, so signing letters never clicks or presses anything.
-- A double blink only plays or pauses while control is on.
 - pyautogui's failsafe is on. Push the real mouse into a screen corner and control switches off.
 
 ## Performance
 
-The main loop never waits for the models.
+The main loop never waits for the model.
 
 - **Detection runs in the background.** MediaPipe runs in LIVE_STREAM mode (`tracking.py`). The loop hands over the newest frame and carries on straight away, and picks up the newest result whenever one is ready. If the model is still busy, frames are simply not sent, so nothing queues up.
 - **The cursor is predicted between detections.** Each detection updates a position and a speed (`CursorPredictor` in `cursor.py`). The loop moves the cursor on every pass using where the hand should be by now, so it glides even when detection runs slower than the camera. `CURSOR_ALPHA`, `CURSOR_BETA` and `CURSOR_MAX_AHEAD` in `config.py` tune it.
 - **Scrolling is smooth too.** It also runs on every pass of the loop, as many small wheel steps.
 - **GPU if there is one.** With `USE_GPU = True` the app tries the GPU first and falls back to the CPU. The window shows which one is in use. The pip build of MediaPipe for Windows has no GPU support, so it uses the CPU there.
-- **Small input for the model.** The camera runs at 640x480 and the models get a 320 pixel wide copy (`DETECTION_WIDTH`). The window still shows the full frame.
+- **Small input for the model.** The camera runs at 640x480 and the model gets a 320 pixel wide copy (`DETECTION_WIDTH`). The window still shows the full frame.
 - **Light drawing.** The hand is shown as a dot on each fingertip and a ring where the cursor follows, not a full skeleton.
 - **The camera is read on its own thread** (`camera.py`), so the loop always has the newest frame.
-- **Extras stay off.** Sign mode and eye tracking are off by default. The face model only loads the first time you turn eye tracking on.
+- **Extras stay off.** Sign mode is off by default.
 
 Measured on my Windows laptop with a fake 30 fps camera:
 
@@ -110,15 +107,6 @@ It knows the ASL letters that can be read from a still hand shape: **A B C D E F
 - Backspace deletes a letter and **c** clears the word.
 
 The letter rules are in `asl_letters.py`. Each finger is sorted into straight, bent or curled by how far its tip reaches from the wrist compared to its knuckle. Then the letter comes from which fingers are straight, where the thumb is, and which fingertips are touching. The thresholds are in `config.py` under `ASL_`.
-
-## Eye tracking (optional)
-
-Press **e** to turn it on. It is off by default because it runs a second model. Turn it off again when you only want hand control.
-
-- **Blink twice** quickly to play or pause media. Both eyes have to close, so a wink does not count. A long eye close does not count either. The timing is in `config.py` under `BLINK_` and `DOUBLE_BLINK_SECONDS`.
-- **Gaze (experimental):** a rough readout of where you are looking: left, right, up or center. It is only shown on screen and never used to click or move anything, because a webcam cannot tell exactly where on the screen you are looking.
-
-The face model needs its own model file (see Running it).
 
 ## How it works
 
@@ -141,7 +129,7 @@ controller.py    pointer, menu and tools
 menu.py          radial menu and the open palm hold
 gestures.py      hand shape rules and flick detection
 debounce.py      ignores flicker between poses
-tracking.py      runs the hand and face models in the background
+tracking.py      runs the hand model in the background
 camera.py        reads the webcam on its own thread
 cursor.py        hand to screen mapping and cursor prediction
 actions.py       mouse, keyboard, scrolling and held keys
@@ -153,7 +141,6 @@ icons.py         the menu icons
 instructions.py  plain words for the help panel and intro
 asl_letters.py   sign language letter rules
 speller.py       builds a word from signed letters
-eyes.py          blink detection and gaze
 fps.py           frames per second counter
 config.py        menu, shortcuts and tuning values
 tests/           unit tests with sample landmark data
@@ -169,12 +156,11 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-Download the MediaPipe models once into `models/`. The face model is only needed for eye tracking.
+Download the MediaPipe hand model once into `models/`.
 
 ```
 mkdir models
 curl -L -o models/hand_landmarker.task https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task
-curl -L -o models/face_landmarker.task https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task
 ```
 
 Then run:
@@ -210,7 +196,6 @@ source .venv/bin/activate
 pip install -r requirements.txt
 mkdir models
 curl -L -o models/hand_landmarker.task https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task
-curl -L -o models/face_landmarker.task https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task
 python main.py
 ```
 

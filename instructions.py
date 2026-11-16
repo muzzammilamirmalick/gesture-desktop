@@ -50,8 +50,6 @@ def action_words(action):
 def help_sections():
     """The help panel as (heading, [(name, what it does)]) pairs."""
     menu_rows = [(LABELS[item], MENU_HELP.get(item, "")) for item in config.MENU_ITEMS]
-    if config.EYE_ACTIONS.get("double_blink"):
-        menu_rows.append(("Blink twice (e)", "play or pause"))
     return [
         ("Always on", ALWAYS_ON),
         ("In the menu", menu_rows),

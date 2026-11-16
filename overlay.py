@@ -275,19 +275,6 @@ def sign_help_panel(height, keys):
     return panel
 
 
-# Eye tracking
-
-def draw_eye_status(frame, eye_status, gaze):
-    """Small box under the header with the eye state and the rough gaze."""
-    width = frame.shape[1]
-    left = width - 270
-    top = HEADER_HEIGHT
-    darken(frame, top, top + 58, left, width)
-    color = GREY if eye_status == "no face" else WHITE
-    draw_text(frame, f"Eyes: {eye_status}", (left + 12, top + 22), color, 0.55)
-    draw_text(frame, f"Gaze (experimental): {gaze or '-'}", (left + 12, top + 46), AMBER, 0.5)
-
-
 # Feedback effects
 
 RIPPLE_SECONDS = 0.5

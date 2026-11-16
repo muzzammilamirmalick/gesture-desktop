@@ -12,13 +12,7 @@ import time
 import cv2
 import mediapipe as mp
 from mediapipe.tasks.python import BaseOptions
-from mediapipe.tasks.python.vision import (
-    FaceLandmarker,
-    FaceLandmarkerOptions,
-    HandLandmarker,
-    HandLandmarkerOptions,
-    RunningMode,
-)
+from mediapipe.tasks.python.vision import HandLandmarker, HandLandmarkerOptions, RunningMode
 
 from fps import FpsCounter
 
@@ -123,23 +117,3 @@ class HandTracker(BackgroundDetector):
     def send(self, image, timestamp_ms):
         self.model.detect_async(image, timestamp_ms)
 
-
-class FaceTracker(BackgroundDetector):
-    def build(self, model_path, delegate):
-        options = FaceLandmarkerOptions(
-            base_options=BaseOptions(model_asset_path=model_path, delegate=delegate),
-            running_mode=RunningMode.LIVE_STREAM,
-            num_faces=1,
-            output_face_blendshapes=True,
-            result_callback=self.on_result,
-        )
-        return FaceLandmarker.create_from_options(options)
-
-    def read(self, result):
-        """Face scores like {"eyeBlinkLeft": 0.8}, or None."""
-        if not result.face_blendshapes:
-            return None
-        return {shape.category_name: shape.score for shape in result.face_blendshapes[0]}
-
-    def send(self, image, timestamp_ms):
-        self.model.detect_async(image, timestamp_ms)

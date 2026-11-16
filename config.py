@@ -63,7 +63,7 @@ SHORTCUTS = {
 CAMERA_INDEX = 0
 CAMERA_WIDTH = 640
 CAMERA_HEIGHT = 480
-# The models get a smaller copy of each frame. The window still shows full size.
+# The model gets a smaller copy of each frame. The window still shows full size.
 DETECTION_WIDTH = 320
 # Try the GPU for detection. Falls back to the CPU if this build has no GPU support.
 USE_GPU = True
@@ -101,13 +101,3 @@ ASL_SPREAD_DEGREES = 12  # index and middle this far apart is V, closer is U
 SIGN_HOLD_SECONDS = 1.0  # hold a letter this long to add it to the word
 SIGN_SPACE_SECONDS = 1.5  # take your hand away this long to add a space
 
-# Eye tracking (press e). Off by default because the face model adds load.
-FACE_MODEL_PATH = "models/face_landmarker.task"
-EYE_ACTIONS = {"double_blink": "play_pause"}
-BLINK_CLOSED = 0.5  # eyes count as closed above this score
-BLINK_OPEN = 0.3  # and open again below this one
-BLINK_MAX_SECONDS = 0.5  # closing for longer than this is not a blink
-DOUBLE_BLINK_SECONDS = 0.7  # the second blink has to come within this time
-# Experimental gaze readout. Higher means you have to look further to the side.
-GAZE_THRESHOLD = 0.4
-GAZE_STABLE_FRAMES = 5
