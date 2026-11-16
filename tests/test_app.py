@@ -2,6 +2,7 @@
 
 import main
 from tests.sample_hands import make_hand
+from tracking import Hand
 
 
 def make_app():
@@ -65,7 +66,7 @@ def test_clear_word():
 def test_sign_mode_reads_letters():
     app = make_app()
     app.handle_key(ord("s"))
-    app.update(make_hand(pinky=True, thumb="out"))
+    app.update([Hand("Right", make_hand(pinky=True, thumb="out"))])
     assert app.letter == "Y"
 
 
@@ -116,3 +117,25 @@ def test_screenshot_flashes_and_says_so():
     app.show_feedback(Feedback("flash", "Screenshot", (0.5, 0.5)), 1.0)
     assert app.flash_at == 1.0
     assert app.toast == "Screenshot"
+
+
+def test_right_hand_controls_when_both_are_in_view():
+    left = Hand("Left", make_hand())
+    right = Hand("Right", make_hand(index=True))
+    assert main.pick_control_hand([left, right], "Right") is right
+
+
+def test_the_only_hand_in_view_is_in_control():
+    left = Hand("Left", make_hand())
+    assert main.pick_control_hand([left], "Right") is left
+    assert main.pick_control_hand([], "Right") is None
+
+
+def test_both_hands_are_tracked_on_their_own():
+    app = make_app()
+    app.update([Hand("Left", make_hand()), Hand("Right", make_hand(index=True))])
+    assert app.motions["Left"].predict(0) is not None
+    assert app.motions["Right"].predict(0) is not None
+    app.update([Hand("Right", make_hand(index=True))])
+    assert app.motions["Left"].predict(0) is None
+    assert app.control_hand.side == "Right"

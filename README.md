@@ -1,6 +1,6 @@
 # Gesture Control (desktop)
 
-Control your computer with one hand in front of your webcam. Point to move the mouse, pinch to click, and hold an open palm to open a radial menu with everything else: scroll, volume, switch app, screenshot, play or pause, close window and show desktop.
+Control your computer with your hands in front of your webcam. Point to move the mouse, pinch to click, and hold an open palm to open a radial menu with everything else: scroll, volume, switch app, screenshot, play or pause, close window and show desktop.
 
 There is almost nothing to memorize. Two gestures are always on, and the menu shows the rest with icons and labels.
 
@@ -42,6 +42,14 @@ Keyboard actions go to whichever window has focus. Click the window you want fir
 Change the order of the menu, or take items out, in `MENU_ITEMS` in `config.py`. The keys behind each action are in `SHORTCUTS` in `config.py`, with a `windows` section and a `mac` section. The app checks which OS it is running on at startup and uses the matching section.
 
 On Mac, pyautogui's play/pause and volume keys do nothing, so `mac_keys.py` sends the same system events that a real keyboard's media keys send.
+
+## Both hands
+
+The app tracks up to two hands at once. Each one is labelled **Left** or **Right** (from MediaPipe's handedness) and drawn in its own color: blue for right, amber for left. Each hand has its own smoothing, so they never pull on each other.
+
+One hand moves the mouse. When both are in view it is the one set in `CONTROL_HAND` in `config.py` (right by default). With only one hand in view, that hand is in control, whichever side it is. The control hand has the green ring on it.
+
+Now and then MediaPipe calls both hands the same side. When that happens the app goes by position instead: in the mirrored view, your left hand is the one on the left.
 
 ## The window
 

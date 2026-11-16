@@ -75,6 +75,10 @@ WINDOW_WIDTH = 960  # the camera view is scaled to this width. 1280 also works.
 DISPLAY_FPS = 60
 MODEL_PATH = "models/hand_landmarker.task"
 
+# Both hands are tracked. This one moves the mouse when both are in view.
+# With only one hand in view, that hand is in control. "Left" or "Right".
+CONTROL_HAND = "Right"
+
 # Gesture rules. Distances are measured as a fraction of hand size
 # (wrist to middle finger knuckle), so they work near or far from the camera.
 PINCH_RATIO = 0.25

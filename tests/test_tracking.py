@@ -94,6 +94,19 @@ def test_real_hand_model_runs_in_the_background():
             time.sleep(0.01)
         number, landmarks = hands.latest()
         assert number == 1
-        assert landmarks is None  # a black frame has no hand in it
+        assert landmarks == []  # a black frame has no hand in it
     finally:
         hands.close()
+
+
+def test_two_hands_called_the_same_side_are_fixed_by_position():
+    on_the_right = tracking.Hand("Right", [(0.7, 0.5)] * 21)
+    on_the_left = tracking.Hand("Right", [(0.2, 0.5)] * 21)
+    hands = tracking.fix_sides([on_the_right, on_the_left])
+    assert [hand.side for hand in hands] == ["Left", "Right"]
+    assert hands[0] is on_the_left
+
+
+def test_sides_that_differ_are_left_alone():
+    hands = [tracking.Hand("Left", [(0.9, 0.5)] * 21), tracking.Hand("Right", [(0.1, 0.5)] * 21)]
+    assert [hand.side for hand in tracking.fix_sides(hands)] == ["Left", "Right"]

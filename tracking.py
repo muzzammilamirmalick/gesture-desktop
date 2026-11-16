@@ -8,6 +8,7 @@ for the model.
 
 import threading
 import time
+from dataclasses import dataclass
 
 import cv2
 import mediapipe as mp
@@ -15,6 +16,30 @@ from mediapipe.tasks.python import BaseOptions
 from mediapipe.tasks.python.vision import HandLandmarker, HandLandmarkerOptions, RunningMode
 
 from fps import FpsCounter
+
+LEFT = "Left"
+RIGHT = "Right"
+
+
+@dataclass
+class Hand:
+    side: str  # "Left" or "Right", from your point of view
+    points: list  # 21 (x, y) image points from 0 to 1, y grows downward
+    world: list = None  # 21 (x, y, z) points in meters, centred on the hand
+
+
+def fix_sides(hands):
+    """Make sure two hands never get the same side.
+
+    MediaPipe now and then calls both hands "Right". When that happens, go by
+    position instead: in the mirrored view your left hand is on the left.
+    """
+    if len(hands) != 2 or hands[0].side != hands[1].side:
+        return hands
+    left, right = sorted(hands, key=lambda hand: hand.points[0][0])
+    left.side, right.side = LEFT, RIGHT
+    return [left, right]
+
 
 # If a result never comes back (MediaPipe can drop frames), stop waiting after this.
 BUSY_TIMEOUT_SECONDS = 0.25
@@ -103,16 +128,25 @@ class HandTracker(BackgroundDetector):
         options = HandLandmarkerOptions(
             base_options=BaseOptions(model_asset_path=model_path, delegate=delegate),
             running_mode=RunningMode.LIVE_STREAM,
-            num_hands=1,
+            num_hands=2,
             result_callback=self.on_result,
         )
         return HandLandmarker.create_from_options(options)
 
     def read(self, result):
-        """The first hand's landmarks as (x, y) pairs, or None."""
-        if not result.hand_landmarks:
-            return None
-        return [(point.x, point.y) for point in result.hand_landmarks[0]]
+        """Every hand in the frame as a Hand, or an empty list.
+
+        MediaPipe works out the side assuming a mirrored selfie image, and the
+        main loop does mirror the frame, so "Left" really is your left hand.
+        """
+        hands = []
+        for points, world, sides in zip(result.hand_landmarks, result.hand_world_landmarks, result.handedness):
+            hands.append(Hand(
+                side=sides[0].category_name,
+                points=[(p.x, p.y) for p in points],
+                world=[(p.x, p.y, p.z) for p in world],
+            ))
+        return fix_sides(hands)
 
     def send(self, image, timestamp_ms):
         self.model.detect_async(image, timestamp_ms)

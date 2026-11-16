@@ -20,7 +20,7 @@ from controller import MENU, SCROLL, SWITCH, VOLUME, GestureController, scroll_s
 from fps import FpsCounter
 from motion import HandMotion
 from speller import Speller
-from tracking import HandTracker
+from tracking import LEFT, RIGHT, HandTracker
 
 # Created when you close the intro screen, so it only shows on the first run.
 INTRO_SEEN_FILE = Path(__file__).parent / ".intro_seen"
@@ -42,6 +42,15 @@ FOOTER_KEYS = "space: control   h: help   s: sign   q: quit"
 SIGN_FOOTER_KEYS = "s: leave   space: space   backspace: delete   c: clear"
 
 BACKSPACE_KEYS = {8, 127}  # Windows sends 8, Mac sends 127
+SIDE_COLORS = {LEFT: overlay.AMBER, RIGHT: overlay.ACCENT}
+
+
+def pick_control_hand(hands, preferred):
+    """The hand that moves the mouse: the preferred side if it is in view, otherwise any hand."""
+    for hand in hands:
+        if hand.side == preferred:
+            return hand
+    return hands[0] if hands else None
 
 
 def resize_for_window(frame):
@@ -81,8 +90,9 @@ class App:
         self.flash_at = None
         self.panels = {}
         self.fps = FpsCounter()
-        self.landmarks = None
-        self.motion = HandMotion(config.HAND_ALPHA, config.HAND_BETA, config.HAND_MAX_AHEAD)
+        self.hands = []  # every hand in view, from the newest detection
+        self.control_hand = None  # the one that moves the mouse
+        self.motions = {side: HandMotion(config.HAND_ALPHA, config.HAND_BETA, config.HAND_MAX_AHEAD) for side in SIDE_COLORS}
         self.gesture = gestures.NO_HAND
 
     def set_aspect(self, width, height):
@@ -90,14 +100,13 @@ class App:
 
     # Updates
 
-    def update(self, landmarks):
-        """Process one new hand detection."""
-        self.landmarks = landmarks
+    def update(self, hands):
+        """Process one new detection: a list with a Hand for each hand in view."""
         now = time.monotonic()
-        if landmarks is None:
-            self.motion.reset()
-        else:
-            self.motion.observe(landmarks, now)
+        self.hands = hands or []
+        self.track_motion(now)
+        self.control_hand = pick_control_hand(self.hands, config.CONTROL_HAND)
+        landmarks = self.control_hand.points if self.control_hand else None
         if self.sign_mode:
             self.letter = asl_letters.classify_letter(landmarks)
             self.speller.update(self.letter, landmarks is not None, now)
@@ -106,6 +115,15 @@ class App:
             self.run_controller(landmarks, now)
         else:
             self.gesture = gestures.classify(landmarks)
+
+    def track_motion(self, now):
+        """Each side keeps its own smoothing, so the two hands never mix."""
+        seen = {hand.side: hand for hand in self.hands}
+        for side, motion in self.motions.items():
+            if side in seen:
+                motion.observe(seen[side].points, now)
+            else:
+                motion.reset()
 
     def run_controller(self, landmarks, now):
         try:
@@ -186,12 +204,10 @@ class App:
         menu_open = self.control_on and controller.mode == MENU
         if menu_open:
             overlay.draw_menu(frame, controller.menu)
-        points = self.motion.predict(now)
-        if points is not None:
-            pointer = actions.cursor_point(points)
-            if menu_open:
-                overlay.draw_pointer_line(frame, controller.menu, pointer)
-            overlay.draw_hand(frame, points, pointer)
+        self.draw_hands(frame, now)
+        pointer = self.control_pointer(now)
+        if menu_open and pointer is not None:
+            overlay.draw_pointer_line(frame, controller.menu, pointer)
         hold = controller.palm.progress(now)
         if self.control_on and hold > 0 and controller.palm_center:
             overlay.draw_hold_ring(frame, controller.palm_center, hold)
@@ -203,6 +219,24 @@ class App:
         if toast:
             overlay.draw_toast(frame, toast)
         overlay.draw_hint(frame, self.hint(now), FOOTER_KEYS)
+
+    def draw_hands(self, frame, now, with_cursor=True):
+        """Both hands, each in its own color with its side written under it."""
+        control_side = self.control_hand.side if self.control_hand else None
+        for side, motion in self.motions.items():
+            points = motion.predict(now)
+            if points is None:
+                continue
+            color = SIDE_COLORS[side]
+            cursor = actions.cursor_point(points) if with_cursor and side == control_side else None
+            overlay.draw_hand(frame, points, cursor, color)
+            overlay.draw_hand_tag(frame, points, side, color)
+
+    def control_pointer(self, now):
+        if self.control_hand is None:
+            return None
+        points = self.motions[self.control_hand.side].predict(now)
+        return None if points is None else actions.cursor_point(points)
 
     def draw_tool(self, frame, now):
         controller = self.controller
@@ -223,11 +257,9 @@ class App:
             overlay.draw_flash(frame, self.flash_at, now)
 
     def draw_sign_mode(self, frame, fps, detection, now):
-        points = self.motion.predict(now)
-        if points is not None:
-            overlay.draw_hand(frame, points)
+        self.draw_hands(frame, now, with_cursor=False)
         progress = self.speller.progress(now)
-        overlay.draw_sign_header(frame, self.letter, self.landmarks is not None, progress, fps, detection)
+        overlay.draw_sign_header(frame, self.letter, self.control_hand is not None, progress, fps, detection)
         overlay.draw_word(frame, self.speller.word)
         overlay.draw_hint(frame, "Hold a letter still to add it to the word", SIGN_FOOTER_KEYS)
 
@@ -317,10 +349,10 @@ def run(camera, hands, app):
             view = resize_for_window(mirrored)
 
         # Gesture logic runs once per new detection, not once per loop.
-        result_number, landmarks = hands.latest()
+        result_number, seen_hands = hands.latest()
         if result_number != seen_result:
             seen_result = result_number
-            app.update(landmarks)
+            app.update(seen_hands)
 
         # The cursor moves on every pass, using the predicted position.
         app.tick(now)
