@@ -88,6 +88,27 @@ VOSK_MODEL_PATH = "models/vosk-model-small-en-us-0.15"
 SCROLL_NOTCHES = 5  # how far one "scroll up" or "scroll down" goes
 VOLUME_PRESSES = 2  # volume key presses for one "volume up" or "volume down"
 
+# Custom gestures (press t to train one). They are saved to this file and
+# loaded every time the app starts.
+CUSTOM_GESTURES_FILE = "my_gestures.json"
+CUSTOM_HOLD_SECONDS = 0.6  # hold a custom gesture this long to run its action
+# How close a hand has to be to a saved sample to count, in hand sizes.
+# Lower is stricter. See custom_gestures.py for how matching works.
+CUSTOM_MATCH_DISTANCE = 0.35
+CUSTOM_NEIGHBOURS = 5  # the k in k-nearest-neighbour
+# The actions you can pick for a custom gesture, keys 1 to 9 in training mode.
+TRAINING_ACTIONS = [
+    "play_pause",
+    "volume_up",
+    "volume_down",
+    "next_window",
+    "screenshot",
+    "scroll_up",
+    "scroll_down",
+    "show_desktop",
+    "click",
+]
+
 # Webcam. The app asks for 1280x720 at 60 fps. Many webcams only give 30 fps,
 # the window shows the real number.
 CAMERA_INDEX = 0

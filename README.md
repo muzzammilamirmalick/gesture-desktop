@@ -87,6 +87,30 @@ The microphone is read on its own thread (`voice.py`), and the main loop picks u
 
 I checked the recognizer with every phrase spoken by Windows text to speech: all 11 were heard correctly, and a phrase that is not a command ("what time is it") was ignored. Each took under 70 ms to process after the speaker stopped.
 
+## Your own gestures
+
+Press **t** for training mode. A bar across the top shows the four steps and which one you are on.
+
+1. **Pose.** Make the pose you want to teach and press **r**. You get a two second countdown to get your hand back in place.
+2. **Record.** Hold still for two seconds while it records. A red bar fills up. It keeps about 30 samples of your pose.
+3. **Name.** Type a name and press Enter.
+4. **Action.** Press a number from 1 to 9 to pick what it does (the list is `TRAINING_ACTIONS` in `config.py`).
+
+It is saved straight away to `my_gestures.json` and loaded every time the app starts. Press **r** to record another or **Esc** to leave. On the first step, backspace deletes the last gesture you saved. The help screen (h) lists your gestures.
+
+With control on, hold one of your gestures still for about half a second and its action runs once. A ring fills around your hand while you hold it, and the header shows the gesture's name. To run it again, drop the pose and make it again. Your gestures never get in the way of pointing, pinching or the open palm menu.
+
+### How it recognizes them
+
+The classifier is in `custom_gestures.py`. It is a k-nearest-neighbour classifier, and the comments at the top of the file walk through it:
+
+1. **Features.** The 21 hand points are moved so the wrist is at zero and divided by the hand size, so it does not matter where your hand is or how far from the camera. Left hands are flipped, so a gesture trained with one hand works with the other.
+2. **Distance.** Two hands are compared by the biggest gap between any pair of matching points. The average would hide a pose that differs in only one finger.
+3. **Vote.** The live hand is compared to every saved sample. The 5 closest vote, and the most common name wins.
+4. **Too far is nothing.** If even the closest sample is more than `CUSTOM_MATCH_DISTANCE` away (0.35 hand sizes), it is not any of your gestures.
+
+If a gesture fires when it should not, lower `CUSTOM_MATCH_DISTANCE`. If it is hard to trigger, raise it a little or record it again while moving your hand around a bit, so it has more variety to match against.
+
 ## The window
 
 - **Top left:** the current mode in big letters (Paused, Pointer, Menu, Scroll, Volume, Switch app) and the hand shape under it.
@@ -103,6 +127,8 @@ I checked the recognizer with every phrase spoken by Windows text to speech: all
 | h | Show or hide the help panel |
 | s | Sign language mode on or off |
 | v | Voice commands on or off |
+| t | Training mode, to teach it your own gesture |
+| Esc | Leave training mode |
 | backspace | Delete a letter (sign mode) |
 | c | Clear the word (sign mode) |
 | q | Quit |
@@ -191,6 +217,10 @@ permissions.py   startup permission checks
 overlay.py       drawing the window
 icons.py         the menu icons
 instructions.py  plain words for the help panel and intro
+custom_gestures.py  your gestures: features, the classifier, saving
+training.py      the steps of training mode
+pose_trigger.py  runs a pose's action once it is held
+paths.py         where the app keeps its files
 asl_letters.py   sign language letter rules
 voice.py         listens to the microphone with Vosk, offline
 voice_commands.py  matches what was heard to a command

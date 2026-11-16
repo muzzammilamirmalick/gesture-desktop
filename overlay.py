@@ -8,6 +8,7 @@ import numpy as np
 import asl_letters
 import icons
 import instructions
+import training
 
 GREEN = (90, 200, 90)
 RED = (70, 70, 225)
@@ -287,6 +288,97 @@ def draw_word(frame, word):
     top = height - 108
     darken(frame, top, top + 46)
     draw_text(frame, f"Word: {word}_", (14, top + 32), WHITE, 0.9, 2)
+
+
+# Training mode
+
+TRAINING_STEPS = [
+    ("1  Pose", [training.POSE, training.COUNTDOWN]),
+    ("2  Record", [training.RECORDING]),
+    ("3  Name", [training.NAME]),
+    ("4  Action", [training.ACTION, training.SAVED]),
+]
+
+
+def draw_training_steps(frame, step):
+    """The four steps across the top, with the current one lit up."""
+    width = frame.shape[1]
+    darken(frame, 0, HEADER_HEIGHT)
+    draw_text(frame, "TRAINING", (16, 46), WHITE, 1.2, 2)
+    draw_text(frame, "Esc: leave", (18, 72), GREY, 0.5)
+    box = 120
+    left = width - len(TRAINING_STEPS) * (box + 8) - 8
+    for number, (label, steps) in enumerate(TRAINING_STEPS):
+        x = left + number * (box + 8)
+        current = step in steps
+        cv2.rectangle(frame, (x, 16), (x + box, 46), ACCENT if current else INK, -1, LINE)
+        draw_text(frame, label, (x + 12, 38), INK if current else GREY, 0.55, 2 if current else 1)
+
+
+def draw_card(frame, lines):
+    """A dark card at the bottom with (text, color, size) lines. The bottom keeps
+    it out of the way of your hand, which is usually held up higher."""
+    height, width = frame.shape[:2]
+    card_height = 30 + sum(int(44 * size) + 10 for _, _, size in lines)
+    top = max(HEADER_HEIGHT + 10, height - card_height - 50)
+    darken(frame, top, top + card_height, 60, width - 60, amount=0.25)
+    y = top + 14
+    for text, color, size in lines:
+        y += int(44 * size) + 10
+        draw_centered(frame, text, width // 2, y, color, size, 2 if size >= 0.7 else 1)
+
+
+def draw_training(frame, session, saved_names, now):
+    draw_training_steps(frame, session.step)
+    step = session.step
+    if step == training.POSE:
+        lines = [
+            ("Make the pose you want to teach", WHITE, 0.8),
+            ("Keep your hand in view and press r to record it", GREY, 0.55),
+        ]
+        if session.note:
+            lines.append((session.note, RED, 0.5))
+        saved = ", ".join(saved_names) if saved_names else "none yet"
+        lines += [
+            (f"Saved gestures: {saved}"[:70], GREY, 0.5),
+            ("backspace: delete the last saved one", GREY, 0.45),
+        ]
+    elif step == training.COUNTDOWN:
+        lines = [
+            ("Get your pose ready", WHITE, 0.8),
+            (f"{session.countdown_left(now):.0f}", ACCENT, 2.0),
+        ]
+    elif step == training.RECORDING:
+        lines = [
+            ("Recording, hold still", WHITE, 0.8),
+            (f"{len(session.samples)} samples", GREY, 0.55),
+        ]
+    elif step == training.NAME:
+        lines = [
+            ("Type a name for it", WHITE, 0.8),
+            (f"{session.name}_", ACCENT, 1.1),
+            ("Enter: next   backspace: delete", GREY, 0.5),
+        ]
+    elif step == training.ACTION:
+        lines = [(f'What should "{session.name}" do?', WHITE, 0.75)]
+        for number, action in enumerate(session.actions, start=1):
+            lines.append((f"{number}   {instructions.action_words(action)}", WHITE, 0.5))
+    else:
+        lines = [
+            (f'Saved "{session.name}"', GREEN, 0.9),
+            (f"Turn control on and hold it to {instructions.action_words(session.action)}", WHITE, 0.55),
+            ("r: record another   Esc: leave", GREY, 0.5),
+        ]
+    draw_card(frame, lines)
+    if step == training.RECORDING:
+        draw_record_bar(frame, session.recording_progress(now))
+
+
+def draw_record_bar(frame, progress):
+    height, width = frame.shape[:2]
+    left, right, y = width // 4, width * 3 // 4, height - 32
+    cv2.rectangle(frame, (left, y), (right, y + 12), GREY, 1, LINE)
+    cv2.rectangle(frame, (left, y), (left + int((right - left) * progress), y + 12), RED, -1, LINE)
 
 
 # Voice

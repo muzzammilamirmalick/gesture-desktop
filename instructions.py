@@ -45,7 +45,8 @@ ACTION_WORDS = {
     "play_pause": "play or pause",
 }
 
-VOICE_HELP_COUNT = 11  # how many voice commands fit in the help panel
+VOICE_HELP_COUNT = 12  # how many voice phrases fit in the help panel
+CUSTOM_HELP_COUNT = 3  # and how many of your gestures
 
 
 def hand_name(gesture):
@@ -64,10 +65,19 @@ SIGN_HELP = [
 ]
 
 
-def help_columns(key_rows):
+def custom_rows(custom):
+    """Your trained gestures for the help screen, or a pointer to training mode."""
+    if not custom:
+        return [("none yet", "press t to train one")]
+    return [(name, action_words(gesture["action"])) for name, gesture in list(custom.items())[:CUSTOM_HELP_COUNT]]
+
+
+def help_columns(key_rows, custom=None):
     """The help screen: gestures and the menu on the left, voice and keys on the right."""
     sections = help_sections()
-    return [sections[:3], sections[3:] + [("Keys", key_rows)]]
+    left = sections[:3]
+    right = sections[3:] + [("Your gestures (t)", custom_rows(custom)), ("Keys", key_rows)]
+    return [left, right]
 
 
 def sign_help_columns(key_rows):
@@ -78,10 +88,12 @@ def sign_help_columns(key_rows):
 def help_sections():
     """The help as (heading, [(name, what it does)]) pairs."""
     menu_rows = [(LABELS[item], MENU_HELP.get(item, "")) for item in config.MENU_ITEMS]
-    voice_rows = [(f'"{phrase}"', action_words(action)) for phrase, action in config.VOICE_COMMANDS.items()]
+    # Two phrases a row, since most of them say what they do.
+    phrases = [f'"{phrase}"' for phrase in config.VOICE_COMMANDS][:VOICE_HELP_COUNT]
+    voice_rows = [(phrases[i], " ".join(phrases[i + 1:i + 2])) for i in range(0, len(phrases), 2)]
     return [
         ("Always on", ALWAYS_ON),
         ("In the menu", menu_rows),
         ("Hands", HANDS_HELP),
-        ("Voice (v)", voice_rows[:VOICE_HELP_COUNT]),
+        ("Voice (v)", voice_rows),
     ]

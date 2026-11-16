@@ -11,32 +11,41 @@ import pyautogui
 import actions
 import asl_letters
 import config
+import custom_gestures
 import fingers
 import gestures
 import instructions
 import overlay
+import paths
 import permissions
 import voice_commands
 from camera import Camera
-from controller import MENU, SCROLL, SWITCH, VOLUME, GestureController, scroll_speed, volume_steps
+from controller import MENU, POINTER, SCROLL, SWITCH, VOLUME, GestureController, scroll_speed, volume_steps
 from debounce import GestureStabilizer
 from fps import FpsCounter
 from motion import HandMotion
+from pose_trigger import PoseTrigger
 from speller import Speller
 from tracking import LEFT, RIGHT, HandTracker
+import training
+from training import TrainingSession
 from voice import FAILED, VoiceListener
 
 # Created when you close the intro screen, so it only shows on the first run.
-INTRO_SEEN_FILE = Path(__file__).parent / ".intro_seen"
+INTRO_SEEN_FILE = paths.user_file(".intro_seen")
 TOAST_SECONDS = 1.2
 HEARD_SECONDS = 4.0  # how long "Heard ..." stays on screen
 RIPPLE_COLORS = {"click": overlay.GREEN, "pick": overlay.ACCENT, "flash": overlay.ACCENT}
 NO_KEY = 255
+ESC_KEY = 27
+# Poses that already do something, so custom gestures never get in their way.
+BUSY_POSES = {gestures.POINT, gestures.PINCH, gestures.OPEN_PALM}
 
 KEY_ROWS = [
     ("space", "control on or off"),
     ("v", "voice on or off"),
     ("s", "sign language"),
+    ("t", "train a gesture"),
     ("h", "help"),
     ("q", "quit"),
 ]
@@ -47,7 +56,7 @@ SIGN_KEY_ROWS = [
     ("c", "clear the word"),
     ("q", "quit"),
 ]
-FOOTER_KEYS = "space: control   h: help   s: sign   v: voice   q: quit"
+FOOTER_KEYS = "space: control   h: help   v: voice   t: train   s: sign   q: quit"
 SIGN_FOOTER_KEYS = "s: leave   space: space   backspace: delete   c: clear"
 
 BACKSPACE_KEYS = {8, 127}  # Windows sends 8, Mac sends 127
@@ -60,6 +69,13 @@ def pick_control_hand(hands, preferred):
         if hand.side == preferred:
             return hand
     return hands[0] if hands else None
+
+
+def hand_features(hand):
+    """The numbers custom gestures are trained and matched on, or None without a hand."""
+    if hand is None:
+        return None
+    return custom_gestures.features(hand.world or hand.points, hand.side)
 
 
 def resize_for_window(frame):
@@ -108,6 +124,13 @@ class App:
         self.voice = None  # created the first time voice is turned on
         self.voice_on = False  # off by default, so it never costs anything unless you want it
         self.heard = None  # (what was heard, what it did, when), for the screen
+        self.training = None  # a TrainingSession while training mode is open
+        self.gestures_file = paths.user_file(config.CUSTOM_GESTURES_FILE)
+        self.custom = custom_gestures.load(self.gestures_file)  # name -> action and samples
+        self.classifier = custom_gestures.GestureClassifier(config.CUSTOM_NEIGHBOURS, config.CUSTOM_MATCH_DISTANCE)
+        self.classifier.set_samples(self.custom)
+        self.custom_name = None  # the custom gesture the control hand is making, if any
+        self.trigger = PoseTrigger(config.CUSTOM_HOLD_SECONDS)
 
     def set_aspect(self, width, height):
         self.controller.aspect = width / height
@@ -122,12 +145,18 @@ class App:
         self.count_fingers()
         self.control_hand = pick_control_hand(self.hands, config.CONTROL_HAND)
         landmarks = self.control_hand.points if self.control_hand else None
-        if self.sign_mode:
+        features = hand_features(self.control_hand)
+        self.custom_name = self.classifier.classify(features) if features else None
+        if self.training:
+            self.training.update(features, now)
+            self.gesture = gestures.classify(landmarks)
+        elif self.sign_mode:
             self.letter = asl_letters.classify_letter(landmarks)
             self.speller.update(self.letter, landmarks is not None, now)
             self.gesture = gestures.classify(landmarks)
         elif self.control_on:
             self.run_controller(landmarks, now)
+            self.check_poses(now)
         else:
             self.gesture = gestures.classify(landmarks)
 
@@ -160,6 +189,21 @@ class App:
         for item in self.controller.take_feedback():
             self.show_feedback(item, now)
 
+    def check_poses(self, now):
+        """Run a custom gesture's action once it has been held for a moment."""
+        if self.controller.mode != POINTER or self.gesture in BUSY_POSES:
+            self.trigger.reset()
+            return
+        pose, action = self.pose_action()
+        if self.trigger.update(pose, action is not None, now):
+            self.run_action(action)
+
+    def pose_action(self):
+        """(pose name, action) for what the control hand is doing, or (None, None)."""
+        if self.custom_name:
+            return self.custom_name, self.custom[self.custom_name]["action"]
+        return None, None
+
     def show_feedback(self, item, now):
         """A label for everything, a ripple where it happened, a flash for screenshots."""
         if item.kind != "click":
@@ -184,6 +228,8 @@ class App:
     def run_action(self, action):
         """Run an action by name. Returns a few words on what happened, for the screen."""
         if action == "control_on":
+            if self.sign_mode or self.training:
+                return "ignored in this mode"
             if not self.control_on:
                 self.toggle_control()
             return "control on" if self.control_on else "no input permission"
@@ -191,6 +237,8 @@ class App:
             if self.control_on:
                 self.toggle_control()
             return "control off"
+        if self.sign_mode or self.training:
+            return "ignored in this mode"
         if not self.control_on:
             return "ignored, control is off"
         try:
@@ -272,7 +320,9 @@ class App:
         frame = resize_for_window(frame)
         now = time.monotonic()
         fps = self.fps.tick(now)
-        if self.sign_mode:
+        if self.training:
+            self.draw_training(frame, fps, detection, now)
+        elif self.sign_mode:
             self.draw_sign_mode(frame, fps, detection, now)
         else:
             self.draw_control_mode(frame, fps, detection, now)
@@ -293,14 +343,15 @@ class App:
         pointer = self.control_pointer(now)
         if menu_open and pointer is not None:
             overlay.draw_pointer_line(frame, controller.menu, pointer)
-        hold = controller.palm.progress(now)
+        hold = max(controller.palm.progress(now), self.trigger.progress(now))
         if self.control_on and hold > 0 and controller.palm_center:
             overlay.draw_hold_ring(frame, controller.palm_center, hold)
         if self.control_on:
             self.draw_tool(frame, now)
         self.draw_effects(frame, now)
         self.draw_voice(frame, now)
-        overlay.draw_header(frame, self.mode_name(), instructions.hand_name(self.gesture), self.control_on, fps, detection)
+        hand = self.custom_name or instructions.hand_name(self.gesture)
+        overlay.draw_header(frame, self.mode_name(), hand, self.control_on, fps, detection)
         toast = self.current_toast()
         if toast:
             overlay.draw_toast(frame, toast)
@@ -357,6 +408,14 @@ class App:
         overlay.draw_word(frame, self.speller.word)
         overlay.draw_hint(frame, "Hold a letter still to add it to the word", SIGN_FOOTER_KEYS)
 
+    def draw_training(self, frame, fps, detection, now):
+        self.draw_hands(frame, now, with_cursor=False)
+        overlay.draw_training(frame, self.training, list(self.custom), now)
+        overlay.draw_speed(frame, fps, detection)
+        toast = self.current_toast()
+        if toast:
+            overlay.draw_toast(frame, toast)
+
     def help_panel(self, size):
         # Each panel never changes while running, so draw it once.
         key = (self.sign_mode, size)
@@ -364,7 +423,7 @@ class App:
             if self.sign_mode:
                 columns = instructions.sign_help_columns(SIGN_KEY_ROWS)
             else:
-                columns = instructions.help_columns(KEY_ROWS)
+                columns = instructions.help_columns(KEY_ROWS, self.custom)
             self.panels[key] = overlay.help_panel(size, columns)
         return self.panels[key]
 
@@ -375,6 +434,10 @@ class App:
             return
         if self.show_intro:
             self.close_intro()  # any key closes the intro, and does nothing else
+        elif self.training:
+            self.handle_training_key(key)
+        elif key == ord("t"):
+            self.open_training()
         elif key == ord("h"):
             self.show_help = not self.show_help
         elif key == ord("s"):
@@ -393,6 +456,49 @@ class App:
             self.speller.clear()
         elif key == ord(" "):
             self.speller.add(" ")
+
+    def typing(self):
+        """True while typing a gesture name, so letters like q type instead of quitting."""
+        return self.training is not None and self.training.step == training.NAME
+
+    # Training mode
+
+    def open_training(self):
+        # Like sign mode, control is off so recording a pose never clicks anything.
+        self.control_on = False
+        self.controller.reset()
+        self.sign_mode = False
+        self.show_help = False
+        self.message = ""
+        self.training = TrainingSession(config.TRAINING_ACTIONS)
+
+    def handle_training_key(self, key):
+        if key == ESC_KEY:
+            self.training = None
+            return
+        event = self.training.handle_key(key, time.monotonic())
+        if event == "save":
+            self.save_gesture(self.training.name, self.training.action, self.training.samples)
+        elif event == "delete":
+            self.delete_last_gesture()
+
+    def save_gesture(self, name, action, samples):
+        self.custom[name] = {"action": action, "samples": samples}
+        self.gestures_changed()
+        self.show_toast(f'Saved "{name}"')
+
+    def delete_last_gesture(self):
+        if not self.custom:
+            return
+        name = list(self.custom)[-1]
+        del self.custom[name]
+        self.gestures_changed()
+        self.show_toast(f'Deleted "{name}"')
+
+    def gestures_changed(self):
+        custom_gestures.save(self.gestures_file, self.custom)
+        self.classifier.set_samples(self.custom)
+        self.panels = {}  # the help screen lists your gestures, so draw it again
 
     def close_intro(self):
         self.show_intro = False
@@ -460,7 +566,7 @@ def run(camera, hands, app):
             cv2.imshow(config.WINDOW_NAME, app.draw(view.copy(), speed_line(camera, hands)))
 
         key = cv2.waitKey(1) & 0xFF
-        if key == ord("q") or window_closed():
+        if (key == ord("q") and not app.typing()) or window_closed():
             break
         app.handle_key(key)
 
