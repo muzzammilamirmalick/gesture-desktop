@@ -6,15 +6,24 @@ which shows up as lag between your hand and the cursor.
 
 import threading
 
+import time
+
 import cv2
+
+from fps import FpsCounter
 
 
 class Camera:
-    def __init__(self, index, width, height):
+    def __init__(self, index, width, height, fps=60):
         self.capture = cv2.VideoCapture(index)
+        # Most webcams only do 720p at 60 fps (or even 30) in MJPG, so ask for it.
+        self.capture.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
         self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+        self.capture.set(cv2.CAP_PROP_FPS, fps)
         self.capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        self.rate = FpsCounter()
+        self.fps = 0.0  # what the webcam really delivers, shown on screen
         self.frame = None
         self.frame_number = 0
         self.running = False
@@ -36,6 +45,7 @@ class Camera:
                 else:
                     self.frame = frame
                     self.frame_number += 1
+                    self.fps = self.rate.tick(time.monotonic())
                 self.new_frame.notify_all()
 
     def latest(self):

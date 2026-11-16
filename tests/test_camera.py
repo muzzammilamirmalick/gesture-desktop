@@ -27,6 +27,8 @@ def make_camera(frames):
     cam.frame_number = 0
     cam.running = False
     cam.new_frame = threading.Condition()
+    cam.rate = camera.FpsCounter()
+    cam.fps = 0.0
     return cam
 
 

@@ -25,6 +25,15 @@ HEADER_HEIGHT = 84
 PANEL_WIDTH = 340
 HELP_COLUMN = 170
 FINGERTIPS = [4, 8, 12, 16, 20]
+# The hand drawn as five lines from the wrist plus one across the knuckles.
+HAND_LINES = [
+    [0, 1, 2, 3, 4],
+    [0, 5, 6, 7, 8],
+    [9, 10, 11, 12],
+    [13, 14, 15, 16],
+    [0, 17, 18, 19, 20],
+    [5, 9, 13, 17],
+]
 
 
 # Basics
@@ -60,17 +69,26 @@ def darken(frame, top, bottom, left=0, right=None, amount=0.35):
 
 # HUD
 
-def draw_hand(frame, landmarks, cursor_point):
-    """A light marker: a dot on each fingertip and a ring where the cursor follows."""
+def to_pixels(points, frame):
+    """All landmarks in window pixels at once, as a numpy array."""
+    height, width = frame.shape[:2]
+    return (np.asarray(points, dtype=np.float32) * (width, height)).astype(np.int32)
+
+
+def draw_hand(frame, points, cursor_point=None, color=WHITE):
+    """A thin skeleton in one draw call, dots on the fingertips, and a ring on the cursor point."""
+    pixels = to_pixels(points, frame)
+    cv2.polylines(frame, [pixels[line] for line in HAND_LINES], False, color, 2, LINE)
     for tip in FINGERTIPS:
-        cv2.circle(frame, to_pixel(landmarks[tip], frame), 4, WHITE, -1, LINE)
-    cv2.circle(frame, to_pixel(cursor_point, frame), 10, GREEN, 2, LINE)
+        cv2.circle(frame, tuple(pixels[tip]), 5, color, -1, LINE)
+    if cursor_point is not None:
+        cv2.circle(frame, to_pixel(cursor_point, frame), 10, GREEN, 2, LINE)
 
 
 def fps_color(fps):
-    if fps >= 24:
+    if fps >= 50:
         return GREEN
-    if fps >= 15:
+    if fps >= 25:
         return AMBER
     return RED
 
@@ -86,9 +104,9 @@ def draw_control_state(frame, control_on):
 
 
 def draw_speed(frame, fps, detection):
-    """Frames per second and the detection rate, top right under the badge."""
+    """Display frame rate, and the camera and detection rates, top right under the badge."""
     width = frame.shape[1]
-    fps_text = f"{fps:.0f} fps"
+    fps_text = f"display {fps:.0f} fps"
     draw_text(frame, fps_text, (width - text_width(fps_text, 0.5) - 14, 64), fps_color(fps), 0.5)
     if detection:
         draw_text(frame, detection, (width - text_width(detection, 0.4) - 14, 79), GREY, 0.4)

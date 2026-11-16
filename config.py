@@ -59,16 +59,20 @@ SHORTCUTS = {
     },
 }
 
-# Webcam. 640x480 is plenty for hand tracking and keeps everything fast.
+# Webcam. The app asks for 1280x720 at 60 fps. Many webcams only give 30 fps,
+# the window shows the real number.
 CAMERA_INDEX = 0
-CAMERA_WIDTH = 640
-CAMERA_HEIGHT = 480
-# The model gets a smaller copy of each frame. The window still shows full size.
-DETECTION_WIDTH = 320
+CAMERA_WIDTH = 1280
+CAMERA_HEIGHT = 720
+CAMERA_FPS = 60
+# The model gets a smaller copy of each frame. The window still shows full detail.
+DETECTION_WIDTH = 480
 # Try the GPU for detection. Falls back to the CPU if this build has no GPU support.
 USE_GPU = True
 WINDOW_NAME = "Gesture Control"
-WINDOW_WIDTH = 640
+WINDOW_WIDTH = 960  # the camera view is scaled to this width. 1280 also works.
+# The window redraws this often, even when the webcam or the model is slower.
+DISPLAY_FPS = 60
 MODEL_PATH = "models/hand_landmarker.task"
 
 # Gesture rules. Distances are measured as a fraction of hand size
@@ -87,6 +91,10 @@ CURSOR_MARGIN = 0.2
 CURSOR_ALPHA = 0.6
 CURSOR_BETA = 0.2
 CURSOR_MAX_AHEAD = 0.08
+# The same smoothing for the hand points drawn on screen.
+HAND_ALPHA = 0.7
+HAND_BETA = 0.2
+HAND_MAX_AHEAD = 0.06
 # The cursor follows the index knuckle, which stays still while you pinch.
 # Set to True to follow the fingertip instead.
 CURSOR_FOLLOWS_TIP = False

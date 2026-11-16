@@ -46,7 +46,7 @@ On Mac, pyautogui's play/pause and volume keys do nothing, so `mac_keys.py` send
 ## The window
 
 - **Top left:** the current mode in big letters (Paused, Pointer, Menu, Scroll, Volume, Switch app) and the hand shape under it.
-- **Top right:** a solid **CONTROL ON** (green) or **CONTROL OFF** (red) badge, the video frame rate and the detection rate.
+- **Top right:** a solid **CONTROL ON** (green) or **CONTROL OFF** (red) badge, the display frame rate, the webcam rate and the detection rate.
 - **Bottom:** one line telling you what to do next, and the keys.
 - **Feedback:** every action shows a short label, and a ripple where it happened. A click shows a green ripple at your fingertip. Screenshots flash the window.
 - **Help:** press **h** for a side panel with the two gestures, every menu item and the keys.
@@ -77,24 +77,28 @@ Keys only work while the gesture window has focus.
 
 ## Performance
 
-The main loop never waits for the model.
+The window redraws at **60 fps**. The webcam and the hand model each run at their own speed, and the main loop never waits for either of them.
 
-- **Detection runs in the background.** MediaPipe runs in LIVE_STREAM mode (`tracking.py`). The loop hands over the newest frame and carries on straight away, and picks up the newest result whenever one is ready. If the model is still busy, frames are simply not sent, so nothing queues up.
-- **The cursor is predicted between detections.** Each detection updates a position and a speed (`CursorPredictor` in `cursor.py`). The loop moves the cursor on every pass using where the hand should be by now, so it glides even when detection runs slower than the camera. `CURSOR_ALPHA`, `CURSOR_BETA` and `CURSOR_MAX_AHEAD` in `config.py` tune it.
-- **Scrolling is smooth too.** It also runs on every pass of the loop, as many small wheel steps.
+- **60 fps display.** The window redraws every 1/60 of a second (`DISPLAY_FPS`), even if the webcam only sends 30 frames a second. The video itself can only update as often as the webcam sends a frame, but the hand overlay, the menu and the cursor move every redraw.
+- **Detection runs in the background.** HandLandmarker runs in LIVE_STREAM mode (`tracking.py`). The loop hands over the newest frame and carries on straight away, and picks up the newest result whenever one is ready. If the model is still busy, frames are simply not sent, so nothing queues up. Detection runs as fast as your hardware allows.
+- **Prediction fills the gaps.** Each detection updates a position and a speed for the cursor (`cursor.py`) and for every hand point (`motion.py`). Between detections they keep moving to where the hand should be by now, so motion looks fluid even when detection is slower than 60. `CURSOR_ALPHA`, `CURSOR_BETA`, `HAND_ALPHA` and the others in `config.py` tune it.
 - **GPU if there is one.** With `USE_GPU = True` the app tries the GPU first and falls back to the CPU. The window shows which one is in use. The pip build of MediaPipe for Windows has no GPU support, so it uses the CPU there.
-- **Small input for the model.** The camera runs at 640x480 and the model gets a 320 pixel wide copy (`DETECTION_WIDTH`). The window still shows the full frame.
-- **Light drawing.** The hand is shown as a dot on each fingertip and a ring where the cursor follows, not a full skeleton.
+- **High resolution camera, small copy for the model.** The app asks the webcam for 1280x720 at 60 fps (in MJPG, which most webcams need for that). The window shows it at 960 wide (`WINDOW_WIDTH`) and the model gets a 480 wide copy (`DETECTION_WIDTH`).
+- **Light drawing.** The hand is a thin skeleton drawn in one call plus a dot on each fingertip. The help panel is drawn once and reused.
 - **The camera is read on its own thread** (`camera.py`), so the loop always has the newest frame.
-- **Extras stay off.** Sign mode is off by default.
+- **1 ms timer on Windows.** Windows normally sleeps in 15 ms steps, which made each pass of the loop take 15 ms and the window miss frames. The app asks for 1 ms steps while it runs.
 
-Measured on my Windows laptop with a fake 30 fps camera:
+The top right of the window shows the real numbers: the display rate, what the webcam really sends, and how fast detection is running (and on CPU or GPU).
 
-| | Video shown | Cursor updates | Longest pause |
-| --- | --- | --- | --- |
-| Background detection, real hand model | 30 fps | about 640 a second | 3 ms (after startup) |
-| Background detection, slow machine (60 ms per detection) | 30 fps | about 640 a second | 4 ms |
-| Old blocking loop, slow machine (60 ms per detection) | 17 fps | 17 a second | 61 ms |
+Measured on my Windows laptop with a fake 720p camera feeding the real hand model (CPU):
+
+| Webcam | Display | Detection | 99% of frames within | Loop passes per second |
+| --- | --- | --- | --- | --- |
+| 30 fps | 60.0 fps | 30 fps | 20.7 ms | about 630 |
+| 60 fps | 60.0 fps | 59 fps | 20.7 ms | about 440 |
+| 30 fps, before the 1 ms timer fix | 58.8 fps | 30 fps | 33.9 ms | about 65 |
+
+With prediction, the drawn hand moves on every frame. Without it, it sat still on half the frames and then jumped (detection at 25 fps, drawn at 60).
 
 ## Sign language mode (optional)
 
@@ -132,6 +136,7 @@ debounce.py      ignores flicker between poses
 tracking.py      runs the hand model in the background
 camera.py        reads the webcam on its own thread
 cursor.py        hand to screen mapping and cursor prediction
+motion.py        smooth, predicted hand points for drawing
 actions.py       mouse, keyboard, scrolling and held keys
 shortcuts.py     detects the OS and picks its shortcuts
 mac_keys.py      media keys on Mac

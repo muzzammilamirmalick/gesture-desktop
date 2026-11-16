@@ -1,5 +1,7 @@
 """Webcam window that turns hand gestures into mouse and keyboard actions."""
 
+import ctypes
+import platform
 import time
 from pathlib import Path
 
@@ -16,6 +18,7 @@ import permissions
 from camera import Camera
 from controller import MENU, SCROLL, SWITCH, VOLUME, GestureController, scroll_speed, volume_steps
 from fps import FpsCounter
+from motion import HandMotion
 from speller import Speller
 from tracking import HandTracker
 
@@ -49,6 +52,14 @@ def resize_for_window(frame):
     return cv2.resize(frame, (config.WINDOW_WIDTH, new_height))
 
 
+def precise_timer(on):
+    """Windows sleeps in 15 ms steps by default, so waitKey(1) really waits 15 ms
+    and the window cannot hold 60 fps. Ask for 1 ms steps while the app runs."""
+    if platform.system() == "Windows":
+        winmm = ctypes.windll.winmm
+        (winmm.timeBeginPeriod if on else winmm.timeEndPeriod)(1)
+
+
 def window_closed():
     return cv2.getWindowProperty(config.WINDOW_NAME, cv2.WND_PROP_VISIBLE) < 1
 
@@ -71,6 +82,7 @@ class App:
         self.panels = {}
         self.fps = FpsCounter()
         self.landmarks = None
+        self.motion = HandMotion(config.HAND_ALPHA, config.HAND_BETA, config.HAND_MAX_AHEAD)
         self.gesture = gestures.NO_HAND
 
     def set_aspect(self, width, height):
@@ -82,6 +94,10 @@ class App:
         """Process one new hand detection."""
         self.landmarks = landmarks
         now = time.monotonic()
+        if landmarks is None:
+            self.motion.reset()
+        else:
+            self.motion.observe(landmarks, now)
         if self.sign_mode:
             self.letter = asl_letters.classify_letter(landmarks)
             self.speller.update(self.letter, landmarks is not None, now)
@@ -149,7 +165,7 @@ class App:
     # Drawing
 
     def draw(self, frame, detection=""):
-        """Draw the window. `detection` is a short line like "detect 30 fps, CPU"."""
+        """Draw the window. `detection` is a short line like "camera 30  detect 28 (CPU)"."""
         frame = resize_for_window(frame)
         now = time.monotonic()
         fps = self.fps.tick(now)
@@ -170,11 +186,12 @@ class App:
         menu_open = self.control_on and controller.mode == MENU
         if menu_open:
             overlay.draw_menu(frame, controller.menu)
-        if self.landmarks:
-            pointer = actions.cursor_point(self.landmarks)
+        points = self.motion.predict(now)
+        if points is not None:
+            pointer = actions.cursor_point(points)
             if menu_open:
                 overlay.draw_pointer_line(frame, controller.menu, pointer)
-            overlay.draw_hand(frame, self.landmarks, pointer)
+            overlay.draw_hand(frame, points, pointer)
         hold = controller.palm.progress(now)
         if self.control_on and hold > 0 and controller.palm_center:
             overlay.draw_hold_ring(frame, controller.palm_center, hold)
@@ -206,8 +223,9 @@ class App:
             overlay.draw_flash(frame, self.flash_at, now)
 
     def draw_sign_mode(self, frame, fps, detection, now):
-        if self.landmarks:
-            overlay.draw_hand(frame, self.landmarks, actions.cursor_point(self.landmarks))
+        points = self.motion.predict(now)
+        if points is not None:
+            overlay.draw_hand(frame, points)
         progress = self.speller.progress(now)
         overlay.draw_sign_header(frame, self.letter, self.landmarks is not None, progress, fps, detection)
         overlay.draw_word(frame, self.speller.word)
@@ -267,14 +285,22 @@ class App:
         self.message = ""
 
 
-def detection_line(hands):
-    return f"detect {hands.detect_fps:.0f} fps, {hands.delegate_name}"
+def speed_line(camera, hands):
+    return f"camera {camera.fps:.0f}   detect {hands.detect_fps:.0f} ({hands.delegate_name})"
 
 
 def run(camera, hands, app):
-    """The main loop. It never waits for the model, so video and cursor stay smooth."""
+    """The main loop. It never waits for the model, so video and cursor stay smooth.
+
+    Three things run at their own speed: the webcam, the hand model, and the
+    window. The window redraws at DISPLAY_FPS using predicted hand points, so it
+    stays smooth even when the webcam or the model is slower than that.
+    """
     shown_frame = 0
-    seen_hand = 0
+    seen_result = 0
+    view = None  # the newest camera frame, mirrored and sized for the window
+    draw_every = 1 / config.DISPLAY_FPS
+    next_draw = 0.0
 
     while True:
         now = time.monotonic()
@@ -283,24 +309,25 @@ def run(camera, hands, app):
             print("The webcam stopped sending frames.")
             break
 
-        new_frame = frame_number != shown_frame
-        if new_frame:
+        if frame_number != shown_frame:
             shown_frame = frame_number
-            frame = cv2.flip(camera_frame, 1)  # mirror view so moving right looks like right
-            app.set_aspect(frame.shape[1], frame.shape[0])
-            hands.submit(frame, now)
+            mirrored = cv2.flip(camera_frame, 1)  # mirror view so moving right looks like right
+            app.set_aspect(mirrored.shape[1], mirrored.shape[0])
+            hands.submit(mirrored, now)
+            view = resize_for_window(mirrored)
 
         # Gesture logic runs once per new detection, not once per loop.
         result_number, landmarks = hands.latest()
-        if result_number != seen_hand:
-            seen_hand = result_number
+        if result_number != seen_result:
+            seen_result = result_number
             app.update(landmarks)
 
         # The cursor moves on every pass, using the predicted position.
         app.tick(now)
 
-        if new_frame:
-            cv2.imshow(config.WINDOW_NAME, app.draw(frame, detection_line(hands)))
+        if view is not None and now >= next_draw:
+            next_draw = max(next_draw + draw_every, now)
+            cv2.imshow(config.WINDOW_NAME, app.draw(view.copy(), speed_line(camera, hands)))
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord("q") or window_closed():
@@ -309,7 +336,7 @@ def run(camera, hands, app):
 
 
 def main():
-    camera = Camera(config.CAMERA_INDEX, config.CAMERA_WIDTH, config.CAMERA_HEIGHT)
+    camera = Camera(config.CAMERA_INDEX, config.CAMERA_WIDTH, config.CAMERA_HEIGHT, config.CAMERA_FPS)
     if not camera.is_open():
         print("Could not open the webcam. Check CAMERA_INDEX in config.py.")
         print(permissions.camera_help())
@@ -326,9 +353,11 @@ def main():
     cv2.namedWindow(config.WINDOW_NAME)
     cv2.setWindowProperty(config.WINDOW_NAME, cv2.WND_PROP_TOPMOST, 1)
     camera.start()
+    precise_timer(True)
     try:
         run(camera, hands, app)
     finally:
+        precise_timer(False)
         actions.release_held_keys()  # never leave Alt or Cmd stuck down
         camera.release()
         hands.close()
