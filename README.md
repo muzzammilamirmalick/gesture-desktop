@@ -383,3 +383,14 @@ The Mac has a built in camera, so it is the easiest place to test live. The rule
 
 ## What I learned
 
+This project taught me a lot, because it touches computer vision, real-time code, a bit of machine learning, and controlling the computer itself.
+
+- Computer vision: how to read live video frames and pull hand landmarks out of them, then turn those points into gestures using distances and angles between the joints.
+- Real-time performance: my first version was laggy because detection was blocking everything. I moved detection onto a background thread and ran it in async mode, then smoothed and predicted the hand position between frames so the cursor feels instant. This was the hardest part and taught me the most about keeping an app responsive.
+- Machine learning basics: for custom gestures, I store sample landmarks and match new poses against them with a simple classifier, so the app can learn a gesture I record instead of only knowing the ones I hard coded.
+- Voice control: I added offline speech recognition so I can trigger actions by voice without sending anything over the internet.
+- Controlling the operating system: I used the hand and voice input to move the mouse, click, press keys and switch windows, and I learned how the real mouse and keyboard are driven from code.
+- Cross platform work: I made it run on both Windows and Mac, which meant handling different shortcuts and the Mac permission system for the camera and input control.
+- Shipping it properly: I kept the code in small, clear files, wrote tests for the gesture and finger counting logic, set up a build so it can be packaged into an installable app, and kept everything local and private.
+
+If I did it again, I would design for performance from the start instead of fixing lag later, because that shaped almost every other decision.
