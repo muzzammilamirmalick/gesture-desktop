@@ -85,16 +85,18 @@ def draw_hand(frame, points, cursor_point=None, color=WHITE):
         cv2.circle(frame, to_pixel(cursor_point, frame), 10, GREEN, 2, LINE)
 
 
-def draw_hand_tag(frame, points, text, color):
-    """A small label under the wrist, like "Right" or "Left  3"."""
+def draw_hand_tag(frame, points, side, count, color):
+    """A tag under the wrist with the side and a big finger count, like "Right 3"."""
     height, width = frame.shape[:2]
     wrist = to_pixel(points[0], frame)
-    size = 0.7
-    text_size = text_width(text, size, 2)
-    left = min(max(wrist[0] - text_size // 2 - 10, 0), width - text_size - 20)
-    top = min(wrist[1] + 18, height - 100)
-    cv2.rectangle(frame, (left, top), (left + text_size + 20, top + 32), color, -1, LINE)
-    draw_text(frame, text, (left + 10, top + 24), INK, size, 2)
+    number = "-" if count is None else str(count)
+    side_size = text_width(side, 0.6, 2)
+    tag_width = side_size + 64
+    left = min(max(wrist[0] - tag_width // 2, 0), width - tag_width)
+    top = min(wrist[1] + 16, height - 110)
+    cv2.rectangle(frame, (left, top), (left + tag_width, top + 44), color, -1, LINE)
+    draw_text(frame, side, (left + 10, top + 29), INK, 0.6, 2)
+    draw_text(frame, number, (left + side_size + 24, top + 36), INK, 1.2, 3)
 
 
 def fps_color(fps):

@@ -139,3 +139,21 @@ def test_both_hands_are_tracked_on_their_own():
     app.update([Hand("Right", make_hand(index=True))])
     assert app.motions["Left"].predict(0) is None
     assert app.control_hand.side == "Right"
+
+
+def test_finger_counts_show_for_each_hand_once_steady():
+    app = make_app()
+    hands = [Hand("Left", make_hand(index=True, middle=True)), Hand("Right", make_hand(index=True))]
+    app.update(hands)
+    assert app.finger_counts == {}  # one detection is not enough yet
+    for _ in range(3):
+        app.update(hands)
+    assert app.finger_counts == {"Left": 2, "Right": 1}
+
+
+def test_finger_count_goes_when_the_hand_goes():
+    app = make_app()
+    for _ in range(3):
+        app.update([Hand("Left", make_hand(index=True))])
+    app.update([])
+    assert app.finger_counts == {}

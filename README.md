@@ -51,6 +51,17 @@ One hand moves the mouse. When both are in view it is the one set in `CONTROL_HA
 
 Now and then MediaPipe calls both hands the same side. When that happens the app goes by position instead: in the mirrored view, your left hand is the one on the left.
 
+## Finger counting
+
+Each hand shows a tag under the wrist with its side and how many fingers it is holding up, from 0 to 5. A new number shows once it has held for a few detections, so it does not flicker while you move.
+
+The rules are in `fingers.py`. They only use angles and distance ratios, so the count stays the same when your hand is tilted, upside down, near the camera or far away:
+
+- **Index to pinky:** a finger is up when it is straight (it bends less than 50 degrees at its middle joint) and its tip is farther from the wrist than its middle joint.
+- **Thumb:** up when it is straight, it points away from the pinky side of the hand, and its tip is at least half a hand size away from the index knuckle. A thumb tucked across the palm or pressed against the side of the hand does not count.
+
+The app gives these rules MediaPipe's 3D world points (in meters, centred on the hand). In 3D a finger pointing towards the camera still looks straight, which a flat 2D picture cannot tell you.
+
 ## The window
 
 - **Top left:** the current mode in big letters (Paused, Pointer, Menu, Scroll, Volume, Switch app) and the hand shape under it.
@@ -140,6 +151,7 @@ main.py          main loop, keys, and what the window shows
 controller.py    pointer, menu and tools
 menu.py          radial menu and the open palm hold
 gestures.py      hand shape rules and flick detection
+fingers.py       counts the fingers held up on each hand
 debounce.py      ignores flicker between poses
 tracking.py      runs the hand model in the background
 camera.py        reads the webcam on its own thread

@@ -11,11 +11,13 @@ import pyautogui
 import actions
 import asl_letters
 import config
+import fingers
 import gestures
 import instructions
 import overlay
 import permissions
 from camera import Camera
+from debounce import GestureStabilizer
 from controller import MENU, SCROLL, SWITCH, VOLUME, GestureController, scroll_speed, volume_steps
 from fps import FpsCounter
 from motion import HandMotion
@@ -93,6 +95,8 @@ class App:
         self.hands = []  # every hand in view, from the newest detection
         self.control_hand = None  # the one that moves the mouse
         self.motions = {side: HandMotion(config.HAND_ALPHA, config.HAND_BETA, config.HAND_MAX_AHEAD) for side in SIDE_COLORS}
+        self.counters = {side: GestureStabilizer(config.STABLE_FRAMES) for side in SIDE_COLORS}
+        self.finger_counts = {}  # side -> fingers held up, for the hands in view
         self.gesture = gestures.NO_HAND
 
     def set_aspect(self, width, height):
@@ -105,6 +109,7 @@ class App:
         now = time.monotonic()
         self.hands = hands or []
         self.track_motion(now)
+        self.count_fingers()
         self.control_hand = pick_control_hand(self.hands, config.CONTROL_HAND)
         landmarks = self.control_hand.points if self.control_hand else None
         if self.sign_mode:
@@ -124,6 +129,18 @@ class App:
                 motion.observe(seen[side].points, now)
             else:
                 motion.reset()
+
+    def count_fingers(self):
+        """Count each hand's fingers. A new count shows once it holds for a few detections."""
+        self.finger_counts = {}
+        for side, counter in self.counters.items():
+            hand = next((hand for hand in self.hands if hand.side == side), None)
+            if hand is None:
+                self.counters[side] = GestureStabilizer(config.STABLE_FRAMES)
+                continue
+            count = counter.update(fingers.count_fingers(hand.world or hand.points))
+            if count is not None:
+                self.finger_counts[side] = count
 
     def run_controller(self, landmarks, now):
         try:
@@ -230,7 +247,7 @@ class App:
             color = SIDE_COLORS[side]
             cursor = actions.cursor_point(points) if with_cursor and side == control_side else None
             overlay.draw_hand(frame, points, cursor, color)
-            overlay.draw_hand_tag(frame, points, side, color)
+            overlay.draw_hand_tag(frame, points, side, self.finger_counts.get(side), color)
 
     def control_pointer(self, now):
         if self.control_hand is None:
