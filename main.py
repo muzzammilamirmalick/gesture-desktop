@@ -9,6 +9,7 @@ import cv2
 import pyautogui
 
 import actions
+import active_window
 import asl_letters
 import config
 import custom_gestures
@@ -18,6 +19,7 @@ import instructions
 import overlay
 import paths
 import permissions
+import profiles
 import voice_commands
 from camera import Camera
 from controller import MENU, POINTER, SCROLL, SWITCH, VOLUME, GestureController, scroll_speed, volume_steps
@@ -131,6 +133,9 @@ class App:
         self.classifier.set_samples(self.custom)
         self.custom_name = None  # the custom gesture the control hand is making, if any
         self.trigger = PoseTrigger(config.CUSTOM_HOLD_SECONDS)
+        self.profile = None  # which app profile is active, see config.PROFILES
+        self.profile_checked_at = 0.0
+        self.set_profile(profiles.DEFAULT)
 
     def set_aspect(self, width, height):
         self.controller.aspect = width / height
@@ -199,10 +204,36 @@ class App:
             self.run_action(action)
 
     def pose_action(self):
-        """(pose name, action) for what the control hand is doing, or (None, None)."""
+        """(pose name, action) for what the control hand is doing, or (None, None).
+
+        Your own gestures come first, then the hand shapes in the app profile."""
         if self.custom_name:
             return self.custom_name, self.custom[self.custom_name]["action"]
+        if self.gesture in self.pose_actions:
+            return self.gesture, self.pose_actions[self.gesture]
         return None, None
+
+    # App profiles
+
+    def set_profile(self, name):
+        if name == self.profile:
+            return
+        self.profile = name
+        self.pose_actions = profiles.gestures_for(name, config.PROFILES)
+        self.voice_actions = profiles.voice_for(name, config.PROFILES, config.VOICE_COMMANDS)
+        self.trigger.reset()
+        self.panels = {}  # the help screen shows this profile's gestures
+
+    def check_active_app(self, now, read_app=active_window.active_app):
+        """Twice a second, switch to the profile for the app in front."""
+        if now - self.profile_checked_at < config.PROFILE_CHECK_SECONDS:
+            return
+        self.profile_checked_at = now
+        app_name, title = read_app()
+        # Our own window gets focus when you press a key. Keep the last profile then.
+        if not app_name or title == config.WINDOW_NAME.lower():
+            return
+        self.set_profile(profiles.pick_profile(app_name, config.PROFILES))
 
     def show_feedback(self, item, now):
         """A label for everything, a ripple where it happened, a flash for screenshots."""
@@ -261,7 +292,8 @@ class App:
             self.message = "Voice model missing, see README"
             return
         if self.voice is None:
-            self.voice = VoiceListener(config.VOSK_MODEL_PATH, config.VOICE_COMMANDS)
+            phrases = profiles.all_phrases(config.PROFILES, config.VOICE_COMMANDS)
+            self.voice = VoiceListener(config.VOSK_MODEL_PATH, phrases)
         self.voice.start()
         self.voice_on = True
         self.message = ""
@@ -278,9 +310,11 @@ class App:
             self.on_heard(text, now)
 
     def on_heard(self, text, now):
-        found = voice_commands.find_command(text, config.VOICE_COMMANDS)
+        found = voice_commands.find_command(text, self.voice_actions)
         if found is None:
-            self.heard = (voice_commands.clean(text) or "?", "not a command", now)
+            words = voice_commands.clean(text)
+            known = words in profiles.all_phrases(config.PROFILES, config.VOICE_COMMANDS)
+            self.heard = (words or "?", "not for this app" if known else "not a command", now)
             return
         phrase, action = found
         self.heard = (phrase, self.run_action(action), now)
@@ -351,7 +385,7 @@ class App:
         self.draw_effects(frame, now)
         self.draw_voice(frame, now)
         hand = self.custom_name or instructions.hand_name(self.gesture)
-        overlay.draw_header(frame, self.mode_name(), hand, self.control_on, fps, detection)
+        overlay.draw_header(frame, self.mode_name(), hand, self.profile, self.control_on, fps, detection)
         toast = self.current_toast()
         if toast:
             overlay.draw_toast(frame, toast)
@@ -418,12 +452,12 @@ class App:
 
     def help_panel(self, size):
         # Each panel never changes while running, so draw it once.
-        key = (self.sign_mode, size)
+        key = (self.sign_mode, self.profile, size)
         if key not in self.panels:
             if self.sign_mode:
                 columns = instructions.sign_help_columns(SIGN_KEY_ROWS)
             else:
-                columns = instructions.help_columns(KEY_ROWS, self.custom)
+                columns = instructions.help_columns(KEY_ROWS, self.custom, self.profile, self.pose_actions)
             self.panels[key] = overlay.help_panel(size, columns)
         return self.panels[key]
 
@@ -560,6 +594,7 @@ def run(camera, hands, app):
         # The cursor moves on every pass, using the predicted position.
         app.tick(now)
         app.check_voice(now)
+        app.check_active_app(now)
 
         if view is not None and now >= next_draw:
             next_draw = max(next_draw + draw_every, now)

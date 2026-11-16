@@ -125,11 +125,13 @@ def draw_speed(frame, fps, detection):
         draw_text(frame, detection, (width - text_width(detection, 0.4) - 14, 79), GREY, 0.4)
 
 
-def draw_header(frame, mode, hand, control_on, fps, detection=""):
-    """Big mode name, the hand shape, CONTROL ON/OFF and speed."""
+def draw_header(frame, mode, hand, profile, control_on, fps, detection=""):
+    """Big mode name, the hand shape, the app profile, CONTROL ON/OFF and speed."""
     darken(frame, 0, HEADER_HEIGHT)
     draw_text(frame, mode.upper(), (16, 46), WHITE, 1.2, 2)
     draw_text(frame, f"hand: {hand}", (18, 72), GREY, 0.5)
+    draw_text(frame, "profile:", (220, 72), GREY, 0.5)
+    draw_text(frame, profile.capitalize(), (220 + text_width("profile: ", 0.5), 72), ACCENT, 0.5, 2)
     draw_control_state(frame, control_on)
     draw_speed(frame, fps, detection)
 
@@ -225,15 +227,15 @@ def help_panel(size, columns):
     panel = np.zeros((height, width, 3), np.uint8)
     for number, sections in enumerate(columns):
         x = 24 + number * (width // 2)
-        y = 40
+        y = 34
         for heading, rows in sections:
-            draw_text(panel, heading, (x, y), WHITE, 0.65, 2)
-            y += 26
+            draw_text(panel, heading, (x, y), WHITE, 0.62, 2)
+            y += 24
             for name, meaning in rows:
                 draw_text(panel, name, (x, y), WHITE, 0.48)
                 draw_text(panel, meaning, (x + HELP_NAME_WIDTH, y), GREY, 0.45)
-                y += 22
-            y += 14
+                y += 21
+            y += 12
     draw_centered(panel, "Press h to close", width // 2, height - 18, ACCENT, 0.55, 2)
     return panel
 

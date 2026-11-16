@@ -9,6 +9,8 @@ MEDIA_KEYS = {
     "mac_volume_up": 0,
     "mac_volume_down": 1,
     "mac_play_pause": 16,
+    "mac_next_track": 17,
+    "mac_previous_track": 18,
 }
 
 SYSTEM_DEFINED_EVENT = 14

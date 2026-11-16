@@ -111,9 +111,27 @@ The classifier is in `custom_gestures.py`. It is a k-nearest-neighbour classifie
 
 If a gesture fires when it should not, lower `CUSTOM_MATCH_DISTANCE`. If it is hard to trigger, raise it a little or record it again while moving your hand around a bit, so it has more variety to match against.
 
+## App profiles
+
+The app checks which program is in front twice a second and switches to a profile for it. The header shows the active profile next to the hand shape.
+
+| Profile | Apps | Hold a hand shape | Extra voice commands |
+| --- | --- | --- | --- |
+| Browser | Chrome, Edge, Firefox, Safari, Brave, Opera, Vivaldi, Arc | Two fingers: next tab. Thumbs up: forward. Thumbs down: back | "next tab", "previous tab", "go back", "go forward" |
+| Media | Spotify, VLC, Music, iTunes, Windows Media Player, mpv | Two fingers: play or pause. Thumbs up/down: volume | "next", "next song", "previous", "previous song" |
+| Default | everything else | Thumbs up/down: volume | none |
+
+Scrolling works everywhere with the menu or by voice, so the browser profile does not need its own. The main voice commands work in every profile, and a profile only adds to them. Hold a hand shape still for about half a second to run it, the same as your own gestures. The help screen (h) shows the hand shapes for the profile you are in. A phrase from another profile shows "not for this app" so you know it was heard.
+
+Profiles live in `PROFILES` in `config.py`. To add one, copy a block, put part of the program's name in `apps` (the .exe name on Windows, like `msedge`, or the app name on a Mac, like `Safari`), and fill in `gestures` and `voice`. Only the program name is matched, not the window title, so a document called "knowledge base" never counts as Edge.
+
+When you press a key in the gesture window, it is the window in front for a moment. The app spots its own window and keeps the profile you were in.
+
+`active_window.py` reads the app in front (with Win32 calls on Windows and NSWorkspace on Mac, nothing extra to install) and `profiles.py` picks the profile and merges its mappings.
+
 ## The window
 
-- **Top left:** the current mode in big letters (Paused, Pointer, Menu, Scroll, Volume, Switch app) and the hand shape under it.
+- **Top left:** the current mode in big letters (Paused, Pointer, Menu, Scroll, Volume, Switch app), and under it the hand shape and the app profile.
 - **Top right:** a solid **CONTROL ON** (green) or **CONTROL OFF** (red) badge, the display frame rate, the webcam rate and the detection rate.
 - **Bottom:** one line telling you what to do next, and the keys.
 - **Feedback:** every action shows a short label, and a ripple where it happened. A click shows a green ripple at your fingertip. Screenshots flash the window.
@@ -221,6 +239,8 @@ custom_gestures.py  your gestures: features, the classifier, saving
 training.py      the steps of training mode
 pose_trigger.py  runs a pose's action once it is held
 paths.py         where the app keeps its files
+active_window.py which app is in front
+profiles.py      picks the app profile and merges its mappings
 asl_letters.py   sign language letter rules
 voice.py         listens to the microphone with Vosk, offline
 voice_commands.py  matches what was heard to a command

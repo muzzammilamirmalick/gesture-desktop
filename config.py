@@ -44,6 +44,12 @@ SHORTCUTS = {
         "volume_up": ["volumeup"],
         "volume_down": ["volumedown"],
         "next_window": ["alt", "tab"],
+        "next_tab": ["ctrl", "tab"],
+        "previous_tab": ["ctrl", "shift", "tab"],
+        "back": ["alt", "left"],
+        "forward": ["alt", "right"],
+        "next_track": ["nexttrack"],
+        "previous_track": ["prevtrack"],
         # Media keys only toggle, so play and pause both press play/pause.
         "play": ["playpause"],
         "pause": ["playpause"],
@@ -61,6 +67,12 @@ SHORTCUTS = {
         "volume_up": ["mac_volume_up"],
         "volume_down": ["mac_volume_down"],
         "next_window": ["command", "tab"],
+        "next_tab": ["ctrl", "tab"],
+        "previous_tab": ["ctrl", "shift", "tab"],
+        "back": ["command", "["],
+        "forward": ["command", "]"],
+        "next_track": ["mac_next_track"],
+        "previous_track": ["mac_previous_track"],
         "play": ["mac_play_pause"],
         "pause": ["mac_play_pause"],
     },
@@ -85,6 +97,55 @@ VOICE_COMMANDS = {
 }
 # The offline speech model. Download it once, see the README.
 VOSK_MODEL_PATH = "models/vosk-model-small-en-us-0.15"
+
+# App profiles. The app checks which program is in front twice a second and
+# uses the first profile whose "apps" names are part of that program's name
+# (on Windows the .exe name like "msedge", on Mac the app name like "Safari").
+# A profile's gestures and voice commands are added on top of the default
+# ones, and replace them where they use the same pose or phrase.
+#
+# Gestures here are the built-in hand shapes: "thumbs_up", "thumbs_down" and
+# "two_fingers" (index and middle up). Hold one still for a moment to run it.
+PROFILES = {
+    "browser": {
+        "apps": ["chrome", "firefox", "edge", "safari", "brave", "opera", "vivaldi", "arc"],
+        "gestures": {
+            "two_fingers": "next_tab",
+            "thumbs_up": "forward",
+            "thumbs_down": "back",
+        },
+        "voice": {
+            "next tab": "next_tab",
+            "previous tab": "previous_tab",
+            "go back": "back",
+            "go forward": "forward",
+        },
+    },
+    "media": {
+        "apps": ["spotify", "vlc", "music", "itunes", "wmplayer", "media player", "mpv"],
+        "gestures": {
+            "two_fingers": "play_pause",
+            "thumbs_up": "volume_up",
+            "thumbs_down": "volume_down",
+        },
+        "voice": {
+            "next": "next_track",
+            "next song": "next_track",
+            "previous": "previous_track",
+            "previous song": "previous_track",
+        },
+    },
+    "default": {
+        "apps": [],  # everything else
+        "gestures": {
+            "thumbs_up": "volume_up",
+            "thumbs_down": "volume_down",
+        },
+        "voice": {},
+    },
+}
+PROFILE_CHECK_SECONDS = 0.5
+
 SCROLL_NOTCHES = 5  # how far one "scroll up" or "scroll down" goes
 VOLUME_PRESSES = 2  # volume key presses for one "volume up" or "volume down"
 

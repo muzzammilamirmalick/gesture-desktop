@@ -23,7 +23,6 @@ MENU_HELP = {
 HANDS_HELP = [
     ("Both hands", "tracked, Left and Right"),
     ("Number by a hand", "fingers held up"),
-    ("Green ring", "the hand in control"),
 ]
 
 INTRO_LINES = [
@@ -43,6 +42,14 @@ HAND_NAMES = {
 
 ACTION_WORDS = {
     "play_pause": "play or pause",
+    "next_track": "next track",
+    "previous_track": "previous track",
+}
+
+POSE_NAMES = {
+    "thumbs_up": "Thumbs up",
+    "thumbs_down": "Thumbs down",
+    "two_fingers": "Two fingers",
 }
 
 VOICE_HELP_COUNT = 12  # how many voice phrases fit in the help panel
@@ -72,10 +79,15 @@ def custom_rows(custom):
     return [(name, action_words(gesture["action"])) for name, gesture in list(custom.items())[:CUSTOM_HELP_COUNT]]
 
 
-def help_columns(key_rows, custom=None):
+def profile_rows(pose_actions):
+    """The hand shapes the current app profile uses, for the help screen."""
+    return [(POSE_NAMES.get(pose, pose), action_words(action)) for pose, action in pose_actions.items()]
+
+
+def help_columns(key_rows, custom=None, profile="default", pose_actions=None):
     """The help screen: gestures and the menu on the left, voice and keys on the right."""
     sections = help_sections()
-    left = sections[:3]
+    left = sections[:3] + [(f"Hold in {profile.capitalize()}", profile_rows(pose_actions or {}))]
     right = sections[3:] + [("Your gestures (t)", custom_rows(custom)), ("Keys", key_rows)]
     return [left, right]
 
