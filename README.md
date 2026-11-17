@@ -310,7 +310,7 @@ Run the tests:
 python -m pytest
 ```
 
-The tests use sample landmark data and stub out pyautogui, so they never move your mouse and they pass the same way on Windows and Mac. GitHub Actions runs them on Windows on every push.
+The tests use sample landmark data and stub out pyautogui, so they never move your mouse and they pass the same way on Windows and Mac. A few tests load the real hand and voice models, so download them first. GitHub Actions runs the tests on Windows on every push.
 
 If something is too touchy or not touchy enough, these are the values in `config.py` to try first: `PINCH_RATIO`, `STABLE_FRAMES`, `MENU_HOLD_SECONDS`, `SCROLL_SPEED`, `VOLUME_STEP` and `FLICK_DISTANCE`.
 

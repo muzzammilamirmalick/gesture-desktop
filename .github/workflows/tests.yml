@@ -19,6 +19,24 @@ jobs:
       - name: Install
         run: pip install -r requirements.txt
 
-      # The tests use sample landmark data, so no webcam or models are needed.
+      # A few tests load the real hand and voice models. They stay out of git, so download
+      # them the same way the README does, and keep them between runs.
+      - name: Cache models
+        id: models
+        uses: actions/cache@v6
+        with:
+          path: models
+          key: models-hand-float16-vosk-small-en-us-0.15
+
+      - name: Download models
+        if: steps.models.outputs.cache-hit != 'true'
+        run: |
+          mkdir models
+          curl.exe -L -o models/hand_landmarker.task https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task
+          curl.exe -L -o models/vosk.zip https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
+          tar -xf models/vosk.zip -C models
+          Remove-Item models/vosk.zip
+
+      # No webcam is needed: the tests use sample landmark data.
       - name: Test
         run: python -m pytest
