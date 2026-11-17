@@ -5,7 +5,6 @@ import math
 import cv2
 import numpy as np
 
-import asl_letters
 import icons
 import instructions
 import training

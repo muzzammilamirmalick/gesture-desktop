@@ -17,17 +17,6 @@ LABELS = {
     "show_desktop": "Desktop",
 }
 
-# One line each for the help panel.
-DESCRIPTIONS = {
-    "scroll": "move your hand up or down to scroll",
-    "volume": "move your hand up or down for volume",
-    "switch_app": "flick left or right through apps",
-    "screenshot": "save a screenshot",
-    "play_pause": "play or pause music and video",
-    "close_window": "close the window or tab",
-    "show_desktop": "hide all windows",
-}
-
 
 def to_view(point, aspect):
     """A normalized (x, y) landmark in view units."""
