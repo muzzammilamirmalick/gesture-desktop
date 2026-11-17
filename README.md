@@ -204,6 +204,23 @@ The letter rules are in `asl_letters.py`. Each finger is sorted into straight, b
 
 ## How it works
 
+```mermaid
+flowchart LR
+    Webcam --> Camera["camera.py<br/>reads frames on its own thread"]
+    Camera --> Loop["main.py<br/>main loop, 60 fps"]
+    Loop <--> Tracker["tracking.py<br/>MediaPipe in the background"]
+    Loop --> Shapes["gestures.py, fingers.py<br/>debounce.py, custom_gestures.py"]
+    Shapes --> Controller["controller.py, menu.py<br/>pointer, menu and tools"]
+    Mic["Microphone"] --> Voice["voice.py<br/>Vosk on its own thread"]
+    Voice --> Commands["voice_commands.py"]
+    Front["active_window.py"] --> Profiles["profiles.py"]
+    Profiles --> Controller
+    Controller --> Actions["actions.py<br/>pyautogui"]
+    Commands --> Actions
+    Actions --> OS["Mouse and keyboard"]
+    Loop --> Overlay["overlay.py, icons.py<br/>draws the window"]
+```
+
 1. A background thread grabs frames from the webcam. The main loop takes the newest one, mirrors it so the window behaves like a mirror, and hands it to the hand model in the background.
 2. MediaPipe returns 21 landmarks (wrist, knuckles, joints and fingertips). The gesture logic runs once per new detection. The cursor and scrolling move on every pass of the loop.
 3. `gestures.py` turns the landmarks into a hand shape with simple rules:
@@ -293,7 +310,7 @@ Run the tests:
 python -m pytest
 ```
 
-The tests use sample landmark data and stub out pyautogui, so they never move your mouse and they pass the same way on Windows and Mac.
+The tests use sample landmark data and stub out pyautogui, so they never move your mouse and they pass the same way on Windows and Mac. GitHub Actions runs them on Windows on every push.
 
 If something is too touchy or not touchy enough, these are the values in `config.py` to try first: `PINCH_RATIO`, `STABLE_FRAMES`, `MENU_HOLD_SECONDS`, `SCROLL_SPEED`, `VOLUME_STEP` and `FLICK_DISTANCE`.
 
